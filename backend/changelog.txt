@@ -1,0 +1,130 @@
+Changelog
+=========
+v1.1.2 (02/03/2025)
+-----------------
+ - Added support for non-Latin characters in slugs (URLs)
+ - Improved multilingual support for Arabic, Cyrillic, and other non-Latin scripts
+
+
+v1.1.1 (05/01/2025)
+-----------------
+ - Fix PyPI deployment
+
+
+v1.1.0 (05/01/2025)
+-----------------
+ - Added support for Python 3.11-3.13, dropped Python 3.8 support
+ - Added Django 4.2-5.2 support, dropped Django 3.2 support
+
+
+v1.0.0 (17/07/2022)
+-----------------
+ - Drop Python 3.6,2.7 support
+ - Drop Django support for versions < 3.2
+
+
+v0.9.0 (31/01/2019)
+-----------------
+ - Drop Python 2.7 and 3.5 support
+ - Added Django 3.0 support
+
+
+v0.8.12 (13/09/2019)
+-----------------
+ - Added Spanish translation. https://github.com/4bimcad
+
+
+v0.8.11 (16/12/2018)
+-----------------
+ - Django 2.2 support
+
+
+v0.8.10 (16/12/2018)
+-----------------
+ - Fixed Items search at Admin page
+
+
+v0.8.9 (02/08/2018)
+-----------------
+ - Display version in the credits section
+
+
+v0.8.8 (02/08/2018)
+-----------------
+ - Added Django 2.1 support
+
+
+v0.8.7 (25/07/2018)
+-----------------
+ - Updated Russian translation
+
+
+v0.8.6 (25/07/2018)
+-----------------
+ - Updated Polish and Turkish translations
+
+
+v0.8.5 (25/07/2018)
+-----------------
+ - Updated translations
+
+
+v0.8.4 (21/07/2018)
+-----------------
+ - Template updates
+ - Bug fixes
+
+
+v0.8.3 (21/07/2018)
+-----------------
+ - Added `DCF_DISPLAY_EMPTY_GROUPS` settings
+
+
+v0.8.2 (17/07/2018)
+-----------------
+ - Bug fixes
+
+
+v0.8.1 (14/07/2018)
+-----------------
+ - Do not limit description in the RSS feed
+ - Currency format
+
+
+v0.8 (13/07/2018)
+-----------------
+ - Added Areas
+ - Cleanup
+ - Updated jQuery to 3.3.1
+ - Updated Lightbox to 2.10.0
+
+
+v0.7.4 (13/07/2018)
+-----------------
+ - Moved user registration outside of the app
+ - added demo project which handle user registration by Email/Pass or Facebook
+
+
+v0.7.3 (09/07/2018)
+-----------------
+Added simple user registration form
+
+
+v0.7 (09/07/2018)
+-----------------
+Renamed to django-classified
+Added demo project
+
+
+v0.2.1 (15/04/2016)
+-----------------
+Custom user model is back!
+New way for providing custom settings (dispose of DCF dictionary)
+Django 1.9.5
+
+v0.2 (26/03/2016)
+-----------------
+Removed custom user model, since it's make impossible for app integrate with existed  solution
+Removed django_compressor integrations, due to problem with installation on some platform (searching for good solution now).
+Added initial migrations and updated installation guide in readme file.
+Django 1.9.4

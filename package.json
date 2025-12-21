@@ -1,0 +1,11 @@
+{
+  "name": "beebol-root",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -k -n backend,web -c blue,green \"powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/dev-backend.ps1\" \"npm --prefix web run dev\"",
+    "install:all": "npm install && npm --prefix web install"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

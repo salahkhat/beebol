@@ -1,0 +1,6 @@
+include LICENSE.txt
+include README.md
+
+recursive-include django_classified/locale *
+recursive-include django_classified/static *
+recursive-include django_classified/templates *

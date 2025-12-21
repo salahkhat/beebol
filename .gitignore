@@ -1,0 +1,42 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Packaging / build
+*.egg-info/
+dist/
+build/
+
+# Testing / tooling
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+
+# Env files (keep .env.example committed)
+.env
+
+# --- Django ---
+*.sqlite3
+*.db
+staticfiles/
+media/
+
+# --- Node / React ---
+node_modules/
+web/dist/
+
+# --- Logs ---
+*.log
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

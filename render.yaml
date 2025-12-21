@@ -1,0 +1,45 @@
+databases:
+  - name: beebol-db
+    plan: free
+    databaseName: beebol
+    user: beebol
+
+services:
+  - type: web
+    name: beebol-backend
+    env: python
+    plan: free
+    rootDir: backend
+    buildCommand: |
+      pip install -r requirements-prod.txt
+      python manage.py collectstatic --noinput
+      python manage.py migrate
+    startCommand: gunicorn beebol_backend.wsgi:application --bind 0.0.0.0:$PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: beebol-db
+          property: connectionString
+      # Must match your Render Static Site URL.
+      # If you keep the default names, this should work as-is.
+      - key: WEB_ORIGIN
+        value: https://beebol-web.onrender.com
+
+  - type: static
+    name: beebol-web
+    plan: free
+    rootDir: web
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      # The React app uses this at build-time.
+      - key: API_BASE_URL
+        value: https://beebol-backend.onrender.com
+      - key: NODE_VERSION
+        value: 20
