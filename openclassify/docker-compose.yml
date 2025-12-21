@@ -1,0 +1,110 @@
+volumes:
+  db-store:
+  psysh-store:
+  storage-store:
+  bootstrap-cache-store:
+  public-app-store:
+
+configs:
+  db-config:
+    file: ./docker/mysql/my.cnf
+
+services:
+  php:
+    build:
+      context: .
+      dockerfile: ./docker/php/Dockerfile
+      target: ${APP_BUILD_TARGET:-development}
+    container_name: oc_php
+    volumes:
+      - type: bind
+        source: ./
+        target: /workspace
+      - type: volume
+        source: storage-store
+        target: /workspace/storage
+      - type: volume
+        source: bootstrap-cache-store
+        target: /workspace/bootstrap/cache
+      - type: volume
+        source: public-app-store
+        target: /workspace/public/app
+      - type: volume
+        source: psysh-store
+        target: /root/.config/psysh
+        volume:
+          nocopy: true
+    depends_on:
+      database:
+        condition: service_healthy
+    environment:
+      COMPOSER_REPO_URL: ${COMPOSER_REPO_URL:-}
+      COMPOSER_REPO_USERNAME: ${COMPOSER_REPO_USERNAME:-}
+      COMPOSER_REPO_PASSWORD: ${COMPOSER_REPO_PASSWORD:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  nginx:
+    build:
+      context: .
+      dockerfile: ./docker/nginx/Dockerfile
+    container_name: ${APP_NAME}_nginx  
+    ports:
+      - "${WEB_PUBLISHED_PORT:-8080}:80"
+    volumes:
+      - type: bind
+        source: ./
+        target: /workspace
+      - type: volume
+        source: storage-store
+        target: /workspace/storage
+      - type: volume
+        source: bootstrap-cache-store
+        target: /workspace/bootstrap/cache
+      - type: volume
+        source: public-app-store
+        target: /workspace/public/app
+    depends_on:
+      - php
+      - database    
+
+  database:
+    build:
+      context: .
+      dockerfile: ./docker/mysql/Dockerfile
+    command: --max_allowed_packet=32505856      # Set max_allowed_packet to 256M (or any other value)  
+    ports:
+      - target: 3306
+        published: ${DB_PUBLISHED_PORT:-3306}
+        protocol: tcp
+        mode: host
+    configs:
+      - source: db-config
+        target: /etc/my.cnf
+    volumes:
+      - type: volume
+        source: db-store
+        target: /var/lib/mysql
+        volume:
+          nocopy: true
+    environment:
+      - MYSQL_DATABASE=${DB_DATABASE:-laravel}
+      - MYSQL_USER=${DB_USERNAME:-phper}
+      - MYSQL_PASSWORD=${DB_PASSWORD:-secret}
+      - MYSQL_ROOT_PASSWORD=${DB_PASSWORD:-secret}
+    healthcheck:
+        test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+        timeout: 5s
+        retries: 10
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    ports:
+      - "8081:80"
+    depends_on:
+      - database
+    environment:
+      PMA_USER: oc
+      PMA_PASSWORD: oc
+      PMA_HOSTS: database,localhost
+      UPLOAD_LIMIT: 10G
