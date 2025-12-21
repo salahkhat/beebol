@@ -45,9 +45,21 @@ curl -s "http://127.0.0.1:8000/api/v1/cities/?governorate=1"
 curl -s "http://127.0.0.1:8000/api/v1/neighborhoods/?city=1"
 ```
 
+## Categories
+
+Categories are seeded by migration. Fetch one to use its `id` when creating listings.
+
+```bash
+curl -s http://127.0.0.1:8000/api/v1/categories/
+```
+
 ## Listings
 
 ### Create a listing (seller)
+
+First, pick IDs from:
+- `GET /api/v1/categories/`
+- `GET /api/v1/governorates/` → `GET /api/v1/cities/?governorate=<id>`
 
 ```bash
 curl -s -X POST http://127.0.0.1:8000/api/v1/listings/ \
