@@ -29,10 +29,10 @@ services:
       # Must match your Render Static Site URL.
       # If you keep the default names, this should work as-is.
       - key: WEB_ORIGIN
-        value: https://beebol-web.onrender.com
+        value: https://beebol.onrender.com
 
   - type: static
-    name: beebol-web
+    name: beebol
     plan: free
     rootDir: web
     buildCommand: npm ci && npm run build

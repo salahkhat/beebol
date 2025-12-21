@@ -7,7 +7,16 @@ from rest_framework.permissions import AllowAny, IsAuthenticated, IsAuthenticate
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from market.models import Category, City, Governorate, Listing, ListingImage, Neighborhood, ListingStatus
+from market.models import (
+    Category,
+    City,
+    Governorate,
+    Listing,
+    ListingImage,
+    ModerationStatus,
+    Neighborhood,
+    ListingStatus,
+)
 from messaging.models import PrivateMessage, PrivateThread, PublicQuestion
 
 from .permissions import IsOwnerOrReadOnly
@@ -106,10 +115,18 @@ class ListingViewSet(viewsets.ModelViewSet):
         ).prefetch_related("images")
 
         user = self.request.user
+        public_visibility = Q(
+            status=ListingStatus.PUBLISHED,
+            moderation_status=ModerationStatus.APPROVED,
+        )
+
         if user.is_authenticated:
-            qs = qs.filter(Q(status=ListingStatus.PUBLISHED) | Q(seller=user))
+            if getattr(user, "is_staff", False):
+                qs = qs
+            else:
+                qs = qs.filter(public_visibility | Q(seller=user))
         else:
-            qs = qs.filter(status=ListingStatus.PUBLISHED)
+            qs = qs.filter(public_visibility)
 
         qs = qs.filter(is_removed=False)
 
@@ -204,7 +221,12 @@ class PrivateThreadViewSet(viewsets.ModelViewSet):
         listing_id = serializer.validated_data["listing_id"]
 
         try:
-            listing = Listing.objects.select_related("seller").get(id=listing_id, is_removed=False)
+            listing = Listing.objects.select_related("seller").get(
+                id=listing_id,
+                is_removed=False,
+                status=ListingStatus.PUBLISHED,
+                moderation_status=ModerationStatus.APPROVED,
+            )
         except Listing.DoesNotExist:
             return Response({"detail": "Listing not found"}, status=status.HTTP_404_NOT_FOUND)
 

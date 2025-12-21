@@ -20,6 +20,8 @@ Render will create:
 
 The web build uses `API_BASE_URL` to call the backend. The backend uses `WEB_ORIGIN` for CORS/CSRF.
 
+After deploy, use the API smoke tests in [API_QUICKSTART.md](API_QUICKSTART.md).
+
 ## Environment variables
 
 The blueprint provisions these automatically:

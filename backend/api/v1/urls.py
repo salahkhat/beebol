@@ -25,10 +25,10 @@ router.register(r"questions", PublicQuestionViewSet, basename="question")
 router.register(r"threads", PrivateThreadViewSet, basename="thread")
 
 urlpatterns = [
-    path("health/", HealthView.as_view(), name="health"),
-    path("auth/register/", RegisterView.as_view(), name="register"),
-    path("auth/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
-    path("auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
-    path("me/", MeView.as_view(), name="me"),
+    path("health/", HealthView.as_view(), name="v1-health"),
+    path("auth/register/", RegisterView.as_view(), name="v1-register"),
+    path("auth/token/", TokenObtainPairView.as_view(), name="v1-token-obtain-pair"),
+    path("auth/token/refresh/", TokenRefreshView.as_view(), name="v1-token-refresh"),
+    path("me/", MeView.as_view(), name="v1-me"),
     path("", include(router.urls)),
 ]
