@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend (migrate + smoke)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      SECRET_KEY: ci
+      DEBUG: "True"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/setup.py
+            backend/setup.cfg
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Django checks
+        run: |
+          python manage.py check
+
+      - name: Migrate DB (SQLite)
+        run: |
+          python manage.py migrate
+
+      - name: Start server
+        run: |
+          nohup python manage.py runserver 127.0.0.1:8000 --noreload > /tmp/django.log 2>&1 &
+
+      - name: API smoke tests (curl)
+        run: |
+          chmod +x ../scripts/ci/api_smoke.sh
+          BASE_URL=http://127.0.0.1:8000 ../scripts/ci/api_smoke.sh
+
+      - name: Dump server log on failure
+        if: failure()
+        run: |
+          echo "--- /tmp/django.log ---"
+          cat /tmp/django.log || true
+
+  web:
+    name: Web (build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        env:
+          API_BASE_URL: http://127.0.0.1:8000
+        run: npm run build
