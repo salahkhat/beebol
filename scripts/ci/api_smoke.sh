@@ -31,8 +31,13 @@ echo "== wait for server =="
 wait_for "$BASE_URL/api/v1/health/"
 
 echo "== health endpoints =="
-curl -fsS "$BASE_URL/api/v1/health/" | tee /dev/stderr | json_get "obj.get('status','')" >/dev/null
-curl -fsS "$BASE_URL/api/health/" | tee /dev/stderr | json_get "obj.get('status','')" >/dev/null
+H1=$(curl -fsS "$BASE_URL/api/v1/health/")
+echo "$H1" >&2
+printf '%s' "$H1" | json_get "obj.get('status','')" >/dev/null
+
+H2=$(curl -fsS "$BASE_URL/api/health/")
+echo "$H2" >&2
+printf '%s' "$H2" | json_get "obj.get('status','')" >/dev/null
 
 echo "== seeded categories =="
 CATS_JSON=$(curl -fsS "$BASE_URL/api/v1/categories/")
