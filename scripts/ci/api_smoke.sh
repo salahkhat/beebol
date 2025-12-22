@@ -6,11 +6,7 @@ BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
 # Minimal helper to extract JSON using Python (avoids jq dependency)
 json_get() {
   local expr="$1"
-  python - <<PY
-import json,sys
-obj=json.load(sys.stdin)
-print($expr)
-PY
+  python -c "import json,sys; obj=json.load(sys.stdin); print($expr)"
 }
 
 wait_for() {
@@ -115,13 +111,7 @@ if [[ "$HTTP_CODE" != "404" ]]; then
 fi
 
 PUB_LIST=$(curl -fsS "$BASE_URL/api/v1/listings/")
-PUB_IDS=$(printf '%s' "$PUB_LIST" | python - <<PY
-import json,sys
-obj=json.load(sys.stdin)
-ids=[str(r.get('id')) for r in obj.get('results',[])]
-print(' '.join(ids))
-PY
-)
+PUB_IDS=$(printf '%s' "$PUB_LIST" | python -c "import json,sys; obj=json.load(sys.stdin); ids=[str(r.get('id')) for r in obj.get('results',[])]; print(' '.join(ids))")
 if echo " $PUB_IDS " | grep -q " $LISTING_ID "; then
   echo "Expected listing id=$LISTING_ID not to be public" >&2
   exit 1
