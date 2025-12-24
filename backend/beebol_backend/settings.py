@@ -15,6 +15,10 @@ environ.Env.read_env(str(BASE_DIR / ".env"))
 SECRET_KEY = env("SECRET_KEY", default="dev")
 DEBUG = env.bool("DEBUG", default=True)
 
+# Safety switch for admin-triggered data seeding.
+# Defaults to DEBUG to avoid accidental production usage.
+ADMIN_SEEDING_ENABLED = env.bool("ADMIN_SEEDING_ENABLED", default=DEBUG)
+
 ALLOWED_HOSTS = [h.strip() for h in env("ALLOWED_HOSTS", default="127.0.0.1,localhost").split(",") if h.strip()]
 
 # Render sets this for web services.

@@ -21,6 +21,8 @@ from market.models import (
 from messaging.models import PrivateMessage, PrivateThread, PublicQuestion
 from reports.models import ListingReport, ReportStatus
 
+from market.seeding import is_admin_seeding_enabled, run_admin_seed
+
 from .permissions import IsOwnerOrReadOnly
 from .serializers import (
     CategorySerializer,
@@ -69,6 +71,31 @@ class RegisterView(APIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         return Response(UserMeSerializer(user).data, status=status.HTTP_201_CREATED)
+
+
+class AdminSeedView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if not getattr(request.user, "is_staff", False):
+            return Response({"detail": "Not allowed."}, status=status.HTTP_403_FORBIDDEN)
+
+        if not is_admin_seeding_enabled():
+            return Response({"detail": "Admin seeding is disabled."}, status=status.HTTP_403_FORBIDDEN)
+
+        scenario = request.data.get("scenario", "demo")
+        options = request.data.get("options", {})
+        if options is None:
+            options = {}
+        if not isinstance(options, dict):
+            return Response({"detail": "options must be an object."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            result = run_admin_seed(scenario=scenario, options=options)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(result.as_dict(), status=status.HTTP_200_OK)
 
 
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
@@ -159,6 +186,18 @@ class ListingViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly]
     search_fields = ["title", "description"]
     ordering_fields = ["created_at", "price"]
+
+    def _mark_pending_if_seller_change(self, listing: Listing):
+        user = self.request.user
+        if not getattr(user, "is_authenticated", False):
+            return
+        if getattr(user, "is_staff", False):
+            return
+        if listing.seller_id != user.id:
+            return
+        if listing.moderation_status != ModerationStatus.PENDING:
+            listing.moderation_status = ModerationStatus.PENDING
+            listing.save(update_fields=["moderation_status", "updated_at"])
 
     def get_queryset(self):
         qs = Listing.objects.select_related(
@@ -425,6 +464,23 @@ class ListingViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(seller=self.request.user)
 
+    def perform_update(self, serializer):
+        listing = serializer.save()
+        self._mark_pending_if_seller_change(listing)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        serializer = ListingWriteSerializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        instance.refresh_from_db()
+        return Response(ListingDetailSerializer(instance, context={"request": request}).data)
+
+    def partial_update(self, request, *args, **kwargs):
+        kwargs["partial"] = True
+        return self.update(request, *args, **kwargs)
+
     @action(detail=True, methods=["get", "post"], permission_classes=[IsAuthenticatedOrReadOnly])
     def images(self, request, pk=None):
         listing = self.get_object()
@@ -437,6 +493,7 @@ class ListingViewSet(viewsets.ModelViewSet):
         serializer = ListingImageSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         image = ListingImage.objects.create(listing=listing, **serializer.validated_data)
+        self._mark_pending_if_seller_change(listing)
         return Response(ListingImageSerializer(image).data, status=status.HTTP_201_CREATED)
 
     @action(
@@ -461,6 +518,7 @@ class ListingViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Image not found"}, status=status.HTTP_404_NOT_FOUND)
 
         img.delete()
+        self._mark_pending_if_seller_change(listing)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["post"], url_path="images/reorder", permission_classes=[IsAuthenticated])
@@ -505,6 +563,8 @@ class ListingViewSet(viewsets.ModelViewSet):
 
         if to_update:
             ListingImage.objects.bulk_update(to_update, ["sort_order"])
+
+        self._mark_pending_if_seller_change(listing)
 
         refreshed = listing.images.order_by("sort_order", "id")
         return Response(ListingImageSerializer(refreshed, many=True).data)

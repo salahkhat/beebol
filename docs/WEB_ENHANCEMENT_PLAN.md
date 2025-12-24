@@ -1,6 +1,7 @@
 # Beebol Web – Enhancement Plan (Execution-Ready)
 
 Date: 2025-12-23
+Updated: 2025-12-24
 
 ## Scope & Constraints
 
@@ -130,10 +131,93 @@ Date: 2025-12-23
 - Add a staff-only dashboard route: `/admin/dashboard`
 - Show quick counts for pending/flagged/removed listings, and link into moderation.
 
+## Phase 5 – New routes (functional expansion)
+
+### A) Saved searches (client-side)
+
+- Add an authenticated route: `/saved-searches`
+- Listings page: add “Save search” action when filters are active.
+- Persist saved searches (name + querystring) in `localStorage`.
+
+### B) Listing compare (client-side)
+
+- Add a public route: `/compare?ids=1,2,3`
+- Listing detail: add “Add to compare” action.
+- Persist compare list in `localStorage`, keep URL shareable.
+
+### C) Reports workflow (backend-powered + staff review)
+
+- Add an authenticated report flow: `/reports/new?listing=<id>`
+  - Users submit a report with a reason and optional details.
+- Backend: add a `reports` app + `ListingReport` model and expose `/api/v1/reports/`.
+- Staff: surface open reports inside Moderation via a “Reports” mode toggle (resolve/dismiss).
+
+## Phase 6 – Reports UX enhancements
+
+### A) My reports (user-facing)
+
+- Add an authenticated route: `/reports`
+- Users can see their submitted reports with status and a link back to the listing.
+- Optional status filter via querystring: `/reports?status=open|resolved|dismissed`
+
+### B) Staff reports filtering
+
+- In Admin Moderation “Reports” mode, allow filtering by status (open/resolved/dismissed).
+
+## Phase 7 – Notifications UI + Watchlist + Staff report preview
+
+### A) Saved-search notifications UI (client-side)
+
+- Saved searches now support a per-search **Notify on/off** toggle.
+- Added a **Check now** action that queries the listings API and stores the latest result count for that saved search.
+
+### B) Watchlist with price-change highlights (client-side)
+
+- Added an authenticated route: `/watchlist`
+- Watchlist loads watched listings, shows whether price went up/down/same (or currency changed), and lets users “mark seen” / remove.
+- Listing detail includes a **Watch/Unwatch** action to add/remove the listing.
+
+### C) Staff report listing preview (staff-only UX)
+
+- In Admin Moderation “Reports” mode, each report can toggle a compact listing preview fetched on-demand to speed up triage.
+
+## Phase 8 – Buyer & seller retention (client-side)
+
+### A) Following sellers
+
+- Added an authenticated route: `/following`
+- Buyers can **Follow/Unfollow** a seller from:
+  - Seller profile header
+  - Listing detail seller row
+- Following list aggregates “latest listings per followed seller” using the existing listings endpoint filtered by seller.
+
+### B) Watch/Unwatch entry points on cards
+
+- Listings grid cards include **Watch/Unwatch** alongside Favorite.
+- Seller profile listing cards include **Watch/Unwatch** alongside View.
+
+### C) Saved-search “new matches” indicator
+
+- Saved searches track “new matches since last check” and display a `+N` delta after **Check now**.
+
 ## Acceptance Criteria
 
-- No new routes were introduced.
+- Phases 1–3 introduced no new routes; Phases 4–5 introduce routes intentionally.
 - All pages render a skeleton instead of a single spinner during load.
 - Every error state is actionable (retry where possible).
 - Keyboard users can reach main content quickly (skip link).
 - Web build succeeds.
+
+### Routes added in Phases 4–5
+
+- `/sellers/:id`
+- `/admin/dashboard`
+- `/saved-searches`
+- `/compare`
+- `/reports/new`
+
+### Routes added in later phases
+
+- `/reports`
+- `/watchlist`
+- `/following`

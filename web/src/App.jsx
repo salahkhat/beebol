@@ -18,6 +18,9 @@ const MyListingsPage = lazy(() => import('./pages/MyListings').then((m) => ({ de
 const SellerProfilePage = lazy(() => import('./pages/SellerProfile').then((m) => ({ default: m.SellerProfilePage })));
 const SavedSearchesPage = lazy(() => import('./pages/SavedSearches').then((m) => ({ default: m.SavedSearchesPage })));
 const ReportListingPage = lazy(() => import('./pages/ReportListing').then((m) => ({ default: m.ReportListingPage })));
+const MyReportsPage = lazy(() => import('./pages/MyReports').then((m) => ({ default: m.MyReportsPage })));
+const WatchlistPage = lazy(() => import('./pages/Watchlist').then((m) => ({ default: m.WatchlistPage })));
+const FollowingPage = lazy(() => import('./pages/Following').then((m) => ({ default: m.FollowingPage })));
 const CompareListingsPage = lazy(() => import('./pages/CompareListings').then((m) => ({ default: m.CompareListingsPage })));
 const AdminDashboardPage = lazy(() => import('./pages/AdminDashboard').then((m) => ({ default: m.AdminDashboardPage })));
 const AdminModerationPage = lazy(() => import('./pages/AdminModeration').then((m) => ({ default: m.AdminModerationPage })));
@@ -125,6 +128,30 @@ export function App() {
             element={
               <RequireAuth>
                 {withSuspense(<ReportListingPage />)}
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/reports"
+            element={
+              <RequireAuth>
+                {withSuspense(<MyReportsPage />)}
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/watchlist"
+            element={
+              <RequireAuth>
+                {withSuspense(<WatchlistPage />)}
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/following"
+            element={
+              <RequireAuth>
+                {withSuspense(<FollowingPage />)}
               </RequireAuth>
             }
           />

@@ -39,6 +39,7 @@ export function AdminModerationPage() {
 
   const [mode, setMode] = useState('listings');
   const [reportSaving, setReportSaving] = useState(false);
+  const [reportStatusFilter, setReportStatusFilter] = useState('open');
 
   const [dialog, setDialog] = useState({ open: false, listing: null, action: null, ids: [] });
   const [selectedIds, setSelectedIds] = useState(() => new Set());
@@ -47,6 +48,7 @@ export function AdminModerationPage() {
   const [showFlagged, setShowFlagged] = useState(false);
 
   const [expandedIds, setExpandedIds] = useState(() => new Set());
+  const [reportPreviewIds, setReportPreviewIds] = useState(() => new Set());
   const [detailsById, setDetailsById] = useState(() => ({}));
   const [detailsLoadingIds, setDetailsLoadingIds] = useState(() => new Set());
   const [detailsErrorById, setDetailsErrorById] = useState(() => ({}));
@@ -56,7 +58,7 @@ export function AdminModerationPage() {
     setError(null);
     try {
       const res = mode === 'reports'
-        ? await api.reports({ status: 'open' })
+        ? await api.reports(reportStatusFilter ? { status: reportStatusFilter } : {})
         : await api.listings(
             showFlagged
               ? {
@@ -83,6 +85,18 @@ export function AdminModerationPage() {
     if (mode !== 'listings') {
       setShowRemoved(false);
       setShowFlagged(false);
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode !== 'reports') {
+      setReportPreviewIds(new Set());
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode === 'reports') {
+      setReportStatusFilter('open');
     }
   }, [mode]);
 
@@ -152,6 +166,17 @@ export function AdminModerationPage() {
       return next;
     });
     // Fire-and-forget detail fetch for first expand.
+    queueMicrotask(() => ensureDetails(listingId));
+  }
+
+  function toggleReportPreview(listingId) {
+    if (!listingId) return;
+    setReportPreviewIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(listingId)) next.delete(listingId);
+      else next.add(listingId);
+      return next;
+    });
     queueMicrotask(() => ensureDetails(listingId));
   }
 
@@ -274,6 +299,22 @@ export function AdminModerationPage() {
           <Button size="sm" variant={mode === 'reports' ? 'primary' : 'secondary'} onClick={() => setMode('reports')}>
             {t('moderation_mode_reports')}
           </Button>
+            {mode === 'reports' ? (
+              <label className="inline-flex items-center gap-2">
+                <Text size="2" color="gray">
+                  {t('reports_status_filter')}
+                </Text>
+                <select
+                  className="rounded-md border border-[var(--gray-a6)] bg-transparent px-2 py-1 text-sm"
+                  value={reportStatusFilter}
+                  onChange={(e) => setReportStatusFilter(String(e.target.value || ''))}
+                >
+                  <option value="open">{t('reports_status_open')}</option>
+                  <option value="resolved">{t('reports_status_resolved')}</option>
+                  <option value="dismissed">{t('reports_status_dismissed')}</option>
+                </select>
+              </label>
+            ) : null}
           {mode === 'listings' ? (
             <label className="inline-flex items-center gap-2">
               <input type="checkbox" checked={showRemoved} onChange={(e) => setShowRemoved(e.target.checked)} />
@@ -336,6 +377,22 @@ export function AdminModerationPage() {
                       </div>
 
                       <Flex align="center" gap="2" wrap="wrap">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => toggleReportPreview(Number(r.listing))}
+                          disabled={!r.listing}
+                        >
+                          <Flex align="center" gap="2">
+                            <Icon
+                              icon={reportPreviewIds.has(Number(r.listing)) ? ChevronUp : ChevronDown}
+                              size={14}
+                            />
+                            <Text as="span" size="2">
+                              {reportPreviewIds.has(Number(r.listing)) ? t('hide_preview') : t('preview')}
+                            </Text>
+                          </Flex>
+                        </Button>
                         <Button size="sm" onClick={() => setReportStatus(r.id, 'resolved')} disabled={reportSaving}>
                           {t('resolve')}
                         </Button>
@@ -344,6 +401,86 @@ export function AdminModerationPage() {
                         </Button>
                       </Flex>
                     </Flex>
+
+                    {reportPreviewIds.has(Number(r.listing)) ? (
+                      <Box mt="4">
+                        <div className="rounded-lg border border-[var(--gray-a5)] bg-[var(--color-panel-solid)] p-4">
+                          {detailsLoadingIds.has(Number(r.listing)) && !detailsById[Number(r.listing)] ? (
+                            <Flex direction="column" gap="2">
+                              <Skeleton className="h-4 w-5/6" />
+                              <Skeleton className="h-4 w-2/3" />
+                              <Skeleton className="h-24 w-full" />
+                            </Flex>
+                          ) : null}
+
+                          {detailsErrorById[Number(r.listing)] ? (
+                            <Callout.Root color="red" variant="surface">
+                              <Callout.Text>
+                                <Flex align="center" justify="between" gap="3" wrap="wrap">
+                                  <Flex align="center" gap="2">
+                                    <Icon icon={AlertTriangle} size={16} className="text-[var(--gray-11)]" aria-label="" />
+                                    <span>
+                                      {t('mod_detailsLoadFailed')}:{' '}
+                                      {detailsErrorById[Number(r.listing)] instanceof ApiError
+                                        ? detailsErrorById[Number(r.listing)].message
+                                        : String(detailsErrorById[Number(r.listing)])}
+                                    </span>
+                                  </Flex>
+                                  <Button size="sm" variant="secondary" onClick={() => ensureDetails(Number(r.listing))}>
+                                    {t('retry')}
+                                  </Button>
+                                </Flex>
+                              </Callout.Text>
+                            </Callout.Root>
+                          ) : null}
+
+                          {detailsById[Number(r.listing)] ? (
+                            <Flex align="start" justify="between" gap="4" wrap="wrap">
+                              <Flex direction="column" gap="2" style={{ minWidth: 0, flex: 1 }}>
+                                <Link to={`/listings/${detailsById[Number(r.listing)].id}`} className="hover:underline">
+                                  <Text weight="bold" size="3" style={{ wordBreak: 'break-word' }}>
+                                    {detailsById[Number(r.listing)].title || t('listing_number', { id: detailsById[Number(r.listing)].id })}
+                                  </Text>
+                                </Link>
+                                {detailsById[Number(r.listing)].price != null ? (
+                                  <Text size="2">{formatMoney(detailsById[Number(r.listing)].price, detailsById[Number(r.listing)].currency)}</Text>
+                                ) : null}
+                                <Flex align="center" gap="2" wrap="wrap">
+                                  <Icon icon={MapPin} size={14} className="text-[var(--gray-11)]" aria-label="" />
+                                  <Text size="1" color="gray">
+                                    {detailsById[Number(r.listing)].city?.name_ar || detailsById[Number(r.listing)].city?.name_en || t('none')}
+                                  </Text>
+                                  <Text size="1" color="gray">·</Text>
+                                  <Icon icon={Clock} size={14} className="text-[var(--gray-11)]" aria-label="" />
+                                  <Text size="1" color="gray">{formatDate(detailsById[Number(r.listing)].created_at)}</Text>
+                                </Flex>
+                                {detailsById[Number(r.listing)].description ? (
+                                  <Text size="2" style={{ whiteSpace: 'pre-wrap' }}>
+                                    {detailsById[Number(r.listing)].description}
+                                  </Text>
+                                ) : null}
+                              </Flex>
+
+                              {Array.isArray(detailsById[Number(r.listing)].images) && detailsById[Number(r.listing)].images.length ? (
+                                <a
+                                  href={detailsById[Number(r.listing)].images[0].image}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="h-24 w-24 overflow-hidden rounded-md border border-[var(--gray-a5)] bg-[var(--color-panel-solid)]"
+                                >
+                                  <img
+                                    src={detailsById[Number(r.listing)].images[0].image}
+                                    alt={detailsById[Number(r.listing)].images[0].alt_text || ''}
+                                    className="h-full w-full object-cover"
+                                    loading="lazy"
+                                  />
+                                </a>
+                              ) : null}
+                            </Flex>
+                          ) : null}
+                        </div>
+                      </Box>
+                    ) : null}
                   </div>
                 ))}
               </Flex>

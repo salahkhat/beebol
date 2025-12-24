@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Box, Flex, Grid, Heading, Link as RTLink, Text } from '@radix-ui/themes';
 import { ArrowLeft, ArrowRight, Link2, MessageSquareText } from 'lucide-react';
@@ -9,6 +9,7 @@ import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
 import { InlineError } from '../ui/InlineError';
 import { Skeleton } from '../ui/Skeleton';
+import { Dialog } from '../ui/Dialog';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { Textarea } from '../ui/Textarea';
@@ -19,6 +20,8 @@ import { useI18n } from '../i18n/i18n';
 import { FavoriteButton } from '../ui/FavoriteButton';
 import { pushRecentlyViewed } from '../lib/recentlyViewed';
 import { addCompareId, formatIdsParam } from '../lib/compare';
+import { addWatch, isWatched, removeWatch, updateWatchSnapshotFromListing } from '../lib/watchlist';
+import { followSeller, isFollowingSeller, unfollowSeller } from '../lib/following';
 
 function moderationBadgeVariant(m) {
   if (m === 'approved') return 'ok';
@@ -45,6 +48,29 @@ export function ListingDetailPage() {
   const imageElRefs = useRef(new Map());
   const prevRectsRef = useRef(null);
 
+  const displayImages = useMemo(() => {
+    const src = isOwner ? images : data?.images;
+    return Array.isArray(src) ? src : [];
+  }, [isOwner, images, data?.images]);
+
+  const [focusedImageId, setFocusedImageId] = useState(null);
+  const [imageDialogOpen, setImageDialogOpen] = useState(false);
+
+  useEffect(() => {
+    if (!displayImages.length) {
+      setFocusedImageId(null);
+      return;
+    }
+    if (!focusedImageId || !displayImages.some((img) => img.id === focusedImageId)) {
+      setFocusedImageId(displayImages[0].id);
+    }
+  }, [displayImages, focusedImageId]);
+
+  const focusedImage = useMemo(() => {
+    if (!displayImages.length) return null;
+    return displayImages.find((img) => img.id === focusedImageId) || displayImages[0];
+  }, [displayImages, focusedImageId]);
+
   const [editDraft, setEditDraft] = useState(null);
   const [savingListing, setSavingListing] = useState(false);
 
@@ -61,6 +87,26 @@ export function ListingDetailPage() {
   const [answerDrafts, setAnswerDrafts] = useState(() => new Map());
 
   const isOwner = !!user && !!data && data.seller_id === user.id;
+  const [watchNonce, setWatchNonce] = useState(0);
+  const watched = useMemo(() => (data?.id ? isWatched(data.id) : false), [data?.id, watchNonce]);
+
+  const sellerId = data?.seller_id;
+  const sellerName = data?.seller_username || data?.seller_id;
+  const [followNonce, setFollowNonce] = useState(0);
+  const isFollowing = useMemo(() => (sellerId ? isFollowingSeller(sellerId) : false), [sellerId, followNonce]);
+
+  function toggleFollow() {
+    if (!sellerId) return;
+    if (isFollowing) {
+      unfollowSeller(sellerId);
+      toast.push({ title: t('following_title'), description: t('follow_removed') });
+      setFollowNonce((n) => n + 1);
+      return;
+    }
+    followSeller({ id: sellerId, username: sellerName });
+    toast.push({ title: t('following_title'), description: t('follow_added') });
+    setFollowNonce((n) => n + 1);
+  }
 
   useEffect(() => {
     if (!data?.id) return;
@@ -185,6 +231,10 @@ export function ListingDetailPage() {
       const res = await api.reorderListingImages(id, order);
       // Backend returns the images list.
       setImages(Array.isArray(res) ? res : nextImages);
+      setData((prev) => {
+        if (!prev) return prev;
+        return { ...prev, images: Array.isArray(res) ? res : nextImages, moderation_status: 'pending' };
+      });
       toast.push({ title: t('detail_images'), description: t('toast_reorderSaved') });
     } catch (e) {
       toast.push({
@@ -244,6 +294,25 @@ export function ListingDetailPage() {
     nav(`/compare?ids=${encodeURIComponent(formatIdsParam(nextIds))}`);
   }
 
+  function toggleWatch() {
+    if (!data?.id) return;
+    if (watched) {
+      removeWatch(data.id);
+      toast.push({ title: t('watchlist_title'), description: t('watch_removed') });
+      setWatchNonce((n) => n + 1);
+      return;
+    }
+    addWatch(data.id, { lastPrice: data.price, lastCurrency: data.currency });
+    toast.push({ title: t('watchlist_title'), description: t('watch_added') });
+    setWatchNonce((n) => n + 1);
+  }
+
+  useEffect(() => {
+    if (!data?.id) return;
+    if (!watched) return;
+    updateWatchSnapshotFromListing(data);
+  }, [data, watched]);
+
   function listingStatusLabel(code) {
     if (!code) return '';
     const key = `status_${code}`;
@@ -271,7 +340,7 @@ export function ListingDetailPage() {
       }
 
       const updated = await api.updateListing(id, payload);
-      setData(updated);
+      setData((prev) => (prev ? { ...prev, ...updated } : updated));
       toast.push({ title: t('detail_manage'), description: t('toast_saved') });
     } catch (e) {
       toast.push({
@@ -307,7 +376,7 @@ export function ListingDetailPage() {
       setData((prev) => {
         if (!prev) return prev;
         const prevImages = Array.isArray(prev.images) ? prev.images : [];
-        return { ...prev, images: [...prevImages, ...created] };
+        return { ...prev, images: [...prevImages, ...created], moderation_status: 'pending' };
       });
 
       setUploadFiles([]);
@@ -350,7 +419,7 @@ export function ListingDetailPage() {
       setData((prev) => {
         if (!prev) return prev;
         const prevImages = Array.isArray(prev.images) ? prev.images : [];
-        return { ...prev, images: prevImages.filter((x) => x.id !== imageId) };
+        return { ...prev, images: prevImages.filter((x) => x.id !== imageId), moderation_status: 'pending' };
       });
       toast.push({ title: t('detail_images'), description: t('toast_imageDeleted') });
     } catch (e) {
@@ -435,49 +504,56 @@ export function ListingDetailPage() {
               ) : null}
             </Flex>
 
-            {data?.moderation_status ? (
-              <Badge variant={moderationBadgeVariant(data.moderation_status)}>{moderationLabel(data.moderation_status)}</Badge>
-            ) : null}
+            <Flex direction="column" align="end" gap="2" style={{ marginLeft: 'auto' }}>
+              {data?.moderation_status ? (
+                <Badge variant={moderationBadgeVariant(data.moderation_status)}>{moderationLabel(data.moderation_status)}</Badge>
+              ) : null}
 
-            {data?.id ? (
-              <Flex align="center" gap="2" wrap="wrap" justify="end">
-                <FavoriteButton listingId={data.id} />
-                <Button variant="secondary" size="sm" onClick={copyLink}>
-                  <Flex align="center" gap="2">
-                    <Icon icon={Link2} size={14} />
+              {data?.id ? (
+                <Flex align="center" gap="2" wrap="wrap" justify="end">
+                  <FavoriteButton listingId={data.id} />
+                  <Button variant="secondary" size="sm" onClick={copyLink}>
+                    <Flex align="center" gap="2">
+                      <Icon icon={Link2} size={14} />
+                      <Text as="span" size="2">
+                        {t('copy_link')}
+                      </Text>
+                    </Flex>
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={addToCompare}>
                     <Text as="span" size="2">
-                      {t('copy_link')}
+                      {t('compare_add')}
                     </Text>
-                  </Flex>
-                </Button>
-                <Button variant="secondary" size="sm" onClick={addToCompare}>
-                  <Text as="span" size="2">
-                    {t('compare_add')}
-                  </Text>
-                </Button>
-                {isAuthenticated ? (
-                  <RTLink asChild underline="none">
-                    <Link to={`/reports/new?listing=${data.id}`}>
-                      <Button variant="secondary" size="sm">
-                        <Text as="span" size="2">
-                          {t('report')}
-                        </Text>
-                      </Button>
-                    </Link>
-                  </RTLink>
-                ) : (
-                  <RTLink asChild underline="none">
-                    <Link to="/login" state={{ from: `/listings/${id}` }}>
-                      <Button variant="secondary" size="sm">
-                        <Text as="span" size="2">
-                          {t('login_to_report')}
-                        </Text>
-                      </Button>
-                    </Link>
-                  </RTLink>
-                )}
-              </Flex>
-            ) : null}
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={toggleWatch}>
+                    <Text as="span" size="2">
+                      {watched ? t('watch_remove') : t('watch_add')}
+                    </Text>
+                  </Button>
+                  {isAuthenticated ? (
+                    <RTLink asChild underline="none">
+                      <Link to={`/reports/new?listing=${data.id}`}>
+                        <Button variant="secondary" size="sm">
+                          <Text as="span" size="2">
+                            {t('report')}
+                          </Text>
+                        </Button>
+                      </Link>
+                    </RTLink>
+                  ) : (
+                    <RTLink asChild underline="none">
+                      <Link to="/login" state={{ from: `/listings/${id}` }}>
+                        <Button variant="secondary" size="sm">
+                          <Text as="span" size="2">
+                            {t('login_to_report')}
+                          </Text>
+                        </Button>
+                      </Link>
+                    </RTLink>
+                  )}
+                </Flex>
+              ) : null}
+            </Flex>
           </Flex>
         </CardHeader>
         <CardBody>
@@ -489,90 +565,265 @@ export function ListingDetailPage() {
               <Skeleton className="h-4 w-5/6" />
               <Skeleton className="h-4 w-2/3" />
               <Skeleton className="h-10 w-64" />
-              <Grid columns={{ initial: '2', sm: '3' }} gap="3" mt="3">
+              <div className="overflow-hidden rounded-lg border border-[var(--gray-a5)] bg-[var(--color-panel-solid)]">
+                <Skeleton className="h-72 w-full sm:h-96" />
+              </div>
+              <Flex gap="2" wrap="nowrap" className="overflow-x-auto pb-1">
                 {Array.from({ length: 6 }).map((_, i) => (
-                  <div key={i} className="overflow-hidden rounded-md border border-[var(--gray-a5)] bg-[var(--color-panel-solid)]">
-                    <Skeleton className="h-28 w-full" />
-                    <div className="px-3 py-3">
-                      <Skeleton className="h-3 w-24" />
-                    </div>
-                  </div>
+                  <Skeleton key={i} className="h-16 w-16 shrink-0 rounded-md" />
                 ))}
-              </Grid>
+              </Flex>
             </Flex>
           ) : null}
 
           {data ? (
             <Flex direction="column" gap="4">
-              <Text size="2">
-                {data.description ? data.description : <Text as="span" color="gray">{t('detail_noDescription')}</Text>}
-              </Text>
-
-              <Grid gap="2">
-                <Text size="2">
-                  <Text as="span" color="gray">
-                    {t('detail_seller')}:
-                  </Text>{' '}
-                  <RTLink asChild underline="always" highContrast>
-                    <Link to={`/sellers/${data.seller_id}`}>
-                      {data.seller_username || data.seller_id}
-                    </Link>
-                  </RTLink>
-                </Text>
-                <Text size="2">
-                  <Text as="span" color="gray">
-                    {t('detail_location')}:
-                  </Text>{' '}
-                  {data.governorate?.name_ar || data.governorate?.name_en}
-                  {' · '}
-                  {data.city?.name_ar || data.city?.name_en}
-                  {data.neighborhood ? ` · ${data.neighborhood?.name_ar || data.neighborhood?.name_en}` : ''}
-                </Text>
-                <Text size="2">
-                  <Text as="span" color="gray">
-                    {t('detail_created')}:
-                  </Text>{' '}
-                  {formatDate(data.created_at)}
-                </Text>
-              </Grid>
-
-              <Flex gap="2" wrap="wrap">
-                <RTLink asChild underline="none">
-                  <Link to="/listings">
-                    <Button variant="secondary">
-                      <Flex align="center" gap="2">
-                        <Icon icon={dir === 'rtl' ? ArrowRight : ArrowLeft} size={16} />
-                        <Text as="span" size="2">
-                          {t('back')}
-                        </Text>
+              <Dialog
+                open={imageDialogOpen}
+                onOpenChange={setImageDialogOpen}
+                title={t('image_preview')}
+                maxWidth="900px"
+              >
+                {focusedImage ? (
+                  <Flex direction="column" gap="3">
+                    <div className="overflow-hidden rounded-lg border border-[var(--gray-a5)] bg-[var(--color-panel-solid)]">
+                      <img
+                        src={focusedImage.image}
+                        alt={focusedImage.alt_text || ''}
+                        className="max-h-[70vh] w-full object-contain"
+                      />
+                    </div>
+                    {displayImages.length > 1 ? (
+                      <Flex gap="2" wrap="nowrap" className="overflow-x-auto pb-1">
+                        {displayImages.map((img) => {
+                          const selected = focusedImage && img.id === focusedImage.id;
+                          return (
+                            <button
+                              key={img.id}
+                              type="button"
+                              className={
+                                `h-16 w-16 shrink-0 overflow-hidden rounded-md border bg-[var(--color-panel-solid)] ` +
+                                (selected ? 'border-[var(--accent-a8)]' : 'border-[var(--gray-a5)]')
+                              }
+                              onClick={() => setFocusedImageId(img.id)}
+                              aria-label={img.alt_text || t('image_preview')}
+                            >
+                              <img src={img.image} alt={img.alt_text || ''} className="h-full w-full object-cover" loading="lazy" />
+                            </button>
+                          );
+                        })}
                       </Flex>
-                    </Button>
-                  </Link>
-                </RTLink>
-                {isAuthenticated ? (
-                  <Button onClick={messageSeller}>
-                    <Flex align="center" gap="2">
-                      <Icon icon={MessageSquareText} size={16} />
-                      <Text as="span" size="2">
-                        {t('detail_messageSeller')}
+                    ) : null}
+                  </Flex>
+                ) : null}
+              </Dialog>
+
+              <Grid columns={{ initial: '1', md: '2' }} gap="5" align="start">
+                <Flex direction="column" gap="4" style={{ minWidth: 0 }}>
+                  <Text size="2">
+                    {data.description ? data.description : <Text as="span" color="gray">{t('detail_noDescription')}</Text>}
+                  </Text>
+
+                  <Grid gap="2">
+                    <Flex align="center" gap="2" wrap="wrap">
+                      <Text size="2">
+                        <Text as="span" color="gray">
+                          {t('detail_seller')}:
+                        </Text>{' '}
+                        <RTLink asChild underline="always" highContrast>
+                          <Link to={`/sellers/${data.seller_id}`}>
+                            {data.seller_username || data.seller_id}
+                          </Link>
+                        </RTLink>
                       </Text>
+                      {isAuthenticated && sellerId && !isOwner ? (
+                        <Button size="sm" variant="secondary" onClick={toggleFollow}>
+                          {isFollowing ? t('unfollow') : t('follow')}
+                        </Button>
+                      ) : null}
                     </Flex>
-                  </Button>
-                ) : (
-                  <RTLink asChild underline="none">
-                    <Link to="/login" state={{ from: `/listings/${id}` }}>
-                      <Button>
+                    <Text size="2">
+                      <Text as="span" color="gray">
+                        {t('detail_location')}:
+                      </Text>{' '}
+                      {data.governorate?.name_ar || data.governorate?.name_en}
+                      {' · '}
+                      {data.city?.name_ar || data.city?.name_en}
+                      {data.neighborhood ? ` · ${data.neighborhood?.name_ar || data.neighborhood?.name_en}` : ''}
+                    </Text>
+                    <Text size="2">
+                      <Text as="span" color="gray">
+                        {t('detail_created')}:
+                      </Text>{' '}
+                      {formatDate(data.created_at)}
+                    </Text>
+                  </Grid>
+
+                  <Flex gap="2" wrap="wrap">
+                    {isAuthenticated ? (
+                      <Button onClick={messageSeller}>
                         <Flex align="center" gap="2">
                           <Icon icon={MessageSquareText} size={16} />
                           <Text as="span" size="2">
-                            {t('login_to_message')}
+                            {t('detail_messageSeller')}
                           </Text>
                         </Flex>
                       </Button>
-                    </Link>
-                  </RTLink>
-                )}
-              </Flex>
+                    ) : (
+                      <RTLink asChild underline="none">
+                        <Link to="/login" state={{ from: `/listings/${id}` }}>
+                          <Button>
+                            <Flex align="center" gap="2">
+                              <Icon icon={MessageSquareText} size={16} />
+                              <Text as="span" size="2">
+                                {t('login_to_message')}
+                              </Text>
+                            </Flex>
+                          </Button>
+                        </Link>
+                      </RTLink>
+                    )}
+                  </Flex>
+                </Flex>
+
+                <Box>
+                  <Flex align="center" justify="between" gap="3" wrap="wrap">
+                    <Heading size="3">{t('detail_images')}</Heading>
+                    {isOwner && displayImages.length > 1 ? (
+                      <Text size="2" color="gray">
+                        {savingOrder ? t('loading') : t('detail_dragToReorder')}
+                      </Text>
+                    ) : null}
+                  </Flex>
+
+                  {focusedImage ? (
+                    <Flex direction="column" gap="3" mt="3">
+                      <button
+                        type="button"
+                        className="overflow-hidden rounded-lg border border-[var(--gray-a5)] bg-[var(--color-panel-solid)]"
+                        onClick={() => setImageDialogOpen(true)}
+                        aria-label={t('open_image_preview')}
+                      >
+                        <img
+                          src={focusedImage.image}
+                          alt={focusedImage.alt_text || ''}
+                          className="h-72 w-full object-contain sm:h-96"
+                          loading="lazy"
+                        />
+                      </button>
+
+                      {displayImages.length > 1 ? (
+                        <Flex gap="2" wrap="nowrap" className="overflow-x-auto pb-1">
+                          {displayImages.map((img) => {
+                            const selected = img.id === focusedImage.id;
+                            return (
+                              <button
+                                key={img.id}
+                                type="button"
+                                className={
+                                  `h-16 w-16 shrink-0 overflow-hidden rounded-md border bg-[var(--color-panel-solid)] ` +
+                                  (selected ? 'border-[var(--accent-a8)]' : 'border-[var(--gray-a5)]')
+                                }
+                                onClick={() => setFocusedImageId(img.id)}
+                                draggable={isOwner}
+                                onDragStart={() => {
+                                  if (!isOwner) return;
+                                  dragIdRef.current = img.id;
+                                }}
+                                onDragOver={(e) => {
+                                  if (!isOwner) return;
+                                  e.preventDefault();
+                                }}
+                                onDrop={(e) => {
+                                  if (!isOwner) return;
+                                  e.preventDefault();
+                                  moveImageTo(dragIdRef.current, img.id);
+                                  dragIdRef.current = null;
+                                }}
+                                onDragEnd={() => {
+                                  dragIdRef.current = null;
+                                }}
+                                aria-label={img.alt_text || t('image_preview')}
+                              >
+                                <img
+                                  src={img.image}
+                                  alt={img.alt_text || ''}
+                                  className="h-full w-full object-cover"
+                                  loading="lazy"
+                                />
+                              </button>
+                            );
+                          })}
+                        </Flex>
+                      ) : null}
+
+                      {isOwner && focusedImage ? (
+                        <Flex gap="2" wrap="wrap">
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => moveImageById(focusedImage.id, -1)}
+                            disabled={savingOrder || displayImages.findIndex((x) => x.id === focusedImage.id) <= 0}
+                          >
+                            {t('move_up')}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => moveImageById(focusedImage.id, 1)}
+                            disabled={
+                              savingOrder ||
+                              displayImages.findIndex((x) => x.id === focusedImage.id) >= displayImages.length - 1
+                            }
+                          >
+                            {t('move_down')}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            onClick={() => deleteImage(focusedImage.id)}
+                            disabled={uploading || savingOrder}
+                          >
+                            {t('remove')}
+                          </Button>
+                        </Flex>
+                      ) : null}
+
+                      {isOwner ? (
+                        <Card>
+                          <Box p={{ initial: '4', sm: '5' }}>
+                            <Flex direction="column" gap="2">
+                              <Text size="2" color="gray">
+                                {t('detail_uploadImage')}
+                              </Text>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                multiple
+                                onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
+                              />
+                              <Input
+                                placeholder={t('create_photos_alt_optional')}
+                                value={uploadAlt}
+                                onChange={(e) => setUploadAlt(e.target.value)}
+                              />
+                              <Flex gap="2" wrap="wrap">
+                                <Button size="sm" onClick={uploadImages} disabled={uploading || uploadFiles.length === 0}>
+                                  {uploading ? t('loading') : t('detail_upload')}
+                                </Button>
+                              </Flex>
+                            </Flex>
+                          </Box>
+                        </Card>
+                      ) : null}
+                    </Flex>
+                  ) : (
+                    <Text size="2" color="gray" mt="3">
+                      {t('detail_noImages')}
+                    </Text>
+                  )}
+                </Box>
+              </Grid>
 
               {isOwner && editDraft ? (
                 <Card>
@@ -737,151 +988,6 @@ export function ListingDetailPage() {
                 </CardBody>
               </Card>
 
-              {isOwner || data.images?.length ? (
-                <Box>
-                  <Flex align="center" justify="between" gap="3" wrap="wrap">
-                    <Heading size="3">{t('detail_images')}</Heading>
-                    {isOwner && images.length > 1 ? (
-                      <Flex align="center" gap="2">
-                        <Text size="2" color="gray">
-                          {savingOrder ? t('loading') : t('detail_dragToReorder')}
-                        </Text>
-                      </Flex>
-                    ) : null}
-                  </Flex>
-
-                  {isOwner ? (
-                    <Card className="mt-3">
-                      <Box p={{ initial: '4', sm: '5' }}>
-                        <Flex direction="column" gap="2">
-                          <Text size="2" color="gray">
-                            {t('detail_uploadImage')}
-                          </Text>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            multiple
-                            onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
-                          />
-                          <Input
-                            placeholder={t('create_photos_alt_optional')}
-                            value={uploadAlt}
-                            onChange={(e) => setUploadAlt(e.target.value)}
-                          />
-                          <Flex gap="2" wrap="wrap">
-                            <Button size="sm" onClick={uploadImages} disabled={uploading || uploadFiles.length === 0}>
-                              {uploading ? t('loading') : t('detail_upload')}
-                            </Button>
-                          </Flex>
-                        </Flex>
-                      </Box>
-                    </Card>
-                  ) : null}
-
-                  {(isOwner ? images : data.images)?.length ? (
-                    <Grid columns={{ initial: '2', sm: '3' }} gap="3" mt="3">
-                      {(isOwner ? images : data.images).map((img, idx, arr) => {
-                        if (!isOwner) {
-                          return (
-                            <RTLink
-                              key={img.id}
-                              href={img.image}
-                              target="_blank"
-                              rel="noreferrer"
-                              underline="none"
-                              className="overflow-hidden rounded-md border border-[var(--gray-a5)] bg-[var(--color-panel-solid)]"
-                            >
-                              <img src={img.image} alt={img.alt_text || ''} className="h-28 w-full object-cover" loading="lazy" />
-                              <div className="px-3 py-3">
-                                <Text size="1" color="gray">
-                                  {t('detail_openImage')}
-                                </Text>
-                              </div>
-                            </RTLink>
-                          );
-                        }
-
-                        return (
-                          <Box
-                            key={img.id}
-                            className="overflow-hidden rounded-md border border-[var(--gray-a5)] bg-[var(--color-panel-solid)]"
-                            onDragOver={(e) => {
-                              if (!isOwner) return;
-                              e.preventDefault();
-                            }}
-                            onDrop={(e) => {
-                              if (!isOwner) return;
-                              e.preventDefault();
-                              moveImageTo(dragIdRef.current, img.id);
-                              dragIdRef.current = null;
-                            }}
-                            onDragEnd={() => {
-                              dragIdRef.current = null;
-                            }}
-                            ref={(el) => {
-                              if (!el) imageElRefs.current.delete(img.id);
-                              else imageElRefs.current.set(img.id, el);
-                            }}
-                          >
-                            <a
-                              href={img.image}
-                              target="_blank"
-                              rel="noreferrer"
-                              draggable
-                              className="block cursor-move"
-                              onDragStart={() => {
-                                dragIdRef.current = img.id;
-                              }}
-                            >
-                              <img src={img.image} alt={img.alt_text || ''} className="h-28 w-full object-cover" loading="lazy" />
-                            </a>
-
-                            <Box p="3">
-                              <Flex align="center" justify="between" gap="2">
-                                <Text size="1" color="gray">
-                                  {t('detail_openImage')}
-                                </Text>
-                                <Flex gap="2">
-                                  <Button
-                                    size="sm"
-                                    variant="secondary"
-                                    onClick={() => moveImageById(img.id, -1)}
-                                    disabled={savingOrder || idx === 0}
-                                  >
-                                    {t('move_up')}
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="secondary"
-                                    onClick={() => moveImageById(img.id, 1)}
-                                    disabled={savingOrder || idx === arr.length - 1}
-                                  >
-                                    {t('move_down')}
-                                  </Button>
-                                </Flex>
-                              </Flex>
-                              <Flex gap="2" mt="2" wrap="wrap">
-                                <Button
-                                  size="sm"
-                                  variant="danger"
-                                  onClick={() => deleteImage(img.id)}
-                                  disabled={uploading || savingOrder}
-                                >
-                                  {t('remove')}
-                                </Button>
-                              </Flex>
-                            </Box>
-                          </Box>
-                        );
-                      })}
-                    </Grid>
-                  ) : (
-                    <Text size="2" color="gray" mt="3">
-                      {t('detail_noImages')}
-                    </Text>
-                  )}
-                </Box>
-              ) : null}
             </Flex>
           ) : null}
         </CardBody>

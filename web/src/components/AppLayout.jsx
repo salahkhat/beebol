@@ -268,6 +268,27 @@ export function AppLayout() {
                     </Link>
                   </DropdownItem>
                   <DropdownItem asChild>
+                    <Link to="/reports">
+                      <Text as="span" size="2">
+                        {t('nav_reports')}
+                      </Text>
+                    </Link>
+                  </DropdownItem>
+                  <DropdownItem asChild>
+                    <Link to="/watchlist">
+                      <Text as="span" size="2">
+                        {t('nav_watchlist')}
+                      </Text>
+                    </Link>
+                  </DropdownItem>
+                  <DropdownItem asChild>
+                    <Link to="/following">
+                      <Text as="span" size="2">
+                        {t('nav_following')}
+                      </Text>
+                    </Link>
+                  </DropdownItem>
+                  <DropdownItem asChild>
                     <Link to="/create">
                       <Flex align="center" gap="2">
                         <Icon icon={PlusCircle} size={16} />

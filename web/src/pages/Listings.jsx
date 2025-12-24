@@ -13,6 +13,7 @@ import { InlineError } from '../ui/InlineError';
 import { EmptyState } from '../ui/EmptyState';
 import { Skeleton } from '../ui/Skeleton';
 import { FavoriteButton } from '../ui/FavoriteButton';
+import { Dialog } from '../ui/Dialog';
 import { formatMoney } from '../lib/format';
 import { getRecentlyViewed, onRecentlyViewedChange } from '../lib/recentlyViewed';
 import { formatDate } from '../lib/format';
@@ -20,6 +21,7 @@ import { useAuth } from '../auth/AuthContext';
 import { useI18n } from '../i18n/i18n';
 import { useToast } from '../ui/Toast';
 import { addSavedSearch, describeListingSearch } from '../lib/savedSearches';
+import { addWatch, listWatchlist, removeWatch } from '../lib/watchlist';
 
 function moderationBadgeVariant(m) {
   if (m === 'approved') return 'ok';
@@ -33,6 +35,35 @@ export function ListingsPage() {
   const { t, dir } = useI18n();
   const toast = useToast();
   const [sp, setSp] = useSearchParams();
+
+  const [imagePreview, setImagePreview] = useState({ open: false, src: '', title: '' });
+
+  function openImagePreview({ src, title }, e) {
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
+    if (!src) return;
+    setImagePreview({ open: true, src, title: title || '' });
+  }
+
+  const [watchedIds, setWatchedIds] = useState(() => new Set(listWatchlist().map((x) => x.id)));
+
+  function toggleWatchCard(listing, e) {
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
+    if (!listing?.id) return;
+    const id = Number(listing.id);
+    if (watchedIds.has(id)) {
+      removeWatch(id);
+      setWatchedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      return;
+    }
+    addWatch(id, { lastPrice: listing.price, lastCurrency: listing.currency });
+    setWatchedIds((prev) => new Set(prev).add(id));
+  }
 
   function moderationLabel(code) {
     if (!code) return '';
@@ -227,6 +258,23 @@ export function ListingsPage() {
 
   return (
     <Flex direction="column" gap="5">
+      <Dialog
+        open={imagePreview.open}
+        onOpenChange={(open) => setImagePreview((p) => ({ ...p, open }))}
+        title={imagePreview.title || t('image_preview')}
+        maxWidth="900px"
+      >
+        {imagePreview.src ? (
+          <div className="overflow-hidden rounded-md border border-[var(--gray-a5)] bg-[var(--color-panel-solid)]">
+            <img
+              src={imagePreview.src}
+              alt={imagePreview.title || ''}
+              className="max-h-[70vh] w-full object-contain"
+            />
+          </div>
+        ) : null}
+      </Dialog>
+
       {!loading && recentlyViewed.length ? (
         <Card>
           <CardHeader>
@@ -242,9 +290,19 @@ export function ListingsPage() {
                         <Flex justify="between" gap="3" align="start">
                           <Flex gap="3" align="start" style={{ minWidth: 0, flex: 1 }}>
                             {rv.thumbnail ? (
-                              <div className="h-12 w-12 shrink-0 overflow-hidden rounded-md border border-[var(--gray-a5)] bg-[var(--color-panel-solid)]">
-                                <img src={rv.thumbnail} alt="" className="h-full w-full object-cover" loading="lazy" />
-                              </div>
+                              <button
+                                type="button"
+                                className="h-14 w-14 shrink-0 overflow-hidden rounded-md border border-[var(--gray-a5)] bg-[var(--color-panel-solid)] sm:h-16 sm:w-16"
+                                onClick={(e) => openImagePreview({ src: rv.thumbnail, title: rv.title || t('listing_number', { id: rv.id }) }, e)}
+                                aria-label={t('open_image_preview')}
+                              >
+                                <img
+                                  src={rv.thumbnail}
+                                  alt={rv.title || ''}
+                                  className="h-full w-full object-cover"
+                                  loading="lazy"
+                                />
+                              </button>
                             ) : null}
                             <Flex direction="column" gap="1" style={{ minWidth: 0 }}>
                               <Text weight="bold" size="2" style={{ wordBreak: 'break-word' }}>
@@ -415,9 +473,19 @@ export function ListingsPage() {
                       <Flex justify="between" gap="4" align="start" wrap="wrap">
                         <Flex gap="3" align="start" style={{ minWidth: 0, flex: 1 }}>
                           {r.thumbnail ? (
-                            <div className="h-16 w-16 shrink-0 overflow-hidden rounded-md border border-[var(--gray-a5)] bg-[var(--color-panel-solid)] sm:h-20 sm:w-20">
-                              <img src={r.thumbnail} alt="" className="h-full w-full object-cover" loading="lazy" />
-                            </div>
+                            <button
+                              type="button"
+                              className="h-24 w-24 shrink-0 overflow-hidden rounded-lg border border-[var(--gray-a6)] bg-[var(--color-panel-solid)] sm:h-28 sm:w-28"
+                              onClick={(e) => openImagePreview({ src: r.thumbnail, title: r.title }, e)}
+                              aria-label={t('open_image_preview')}
+                            >
+                              <img
+                                src={r.thumbnail}
+                                alt={r.title || ''}
+                                className="h-full w-full object-cover"
+                                loading="lazy"
+                              />
+                            </button>
                           ) : null}
 
                           <Flex direction="column" gap="2" style={{ minWidth: 0 }}>
@@ -436,7 +504,12 @@ export function ListingsPage() {
                         </Flex>
 
                         <Flex direction="column" gap="2" align="end">
-                          <FavoriteButton listingId={r.id} />
+                          <Flex align="center" gap="2" justify="end">
+                            <Button size="sm" variant="secondary" onClick={(e) => toggleWatchCard(r, e)}>
+                              {watchedIds.has(Number(r.id)) ? t('watch_remove') : t('watch_add')}
+                            </Button>
+                            <FavoriteButton listingId={r.id} />
+                          </Flex>
                           <Flex align="center" gap="2">
                             <Icon icon={Clock} size={14} className="text-[var(--gray-11)]" aria-label="" />
                             <Text size="1" color="gray">

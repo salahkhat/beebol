@@ -11,10 +11,16 @@ import { EmptyState } from '../ui/EmptyState';
 import { Skeleton } from '../ui/Skeleton';
 import { formatDate, formatMoney } from '../lib/format';
 import { useI18n } from '../i18n/i18n';
+import { useAuth } from '../auth/AuthContext';
+import { useToast } from '../ui/Toast';
+import { followSeller, isFollowingSeller, unfollowSeller } from '../lib/following';
+import { addWatch, listWatchlist, removeWatch } from '../lib/watchlist';
 
 export function SellerProfilePage() {
   const { id } = useParams();
   const { t, dir } = useI18n();
+  const { isAuthenticated } = useAuth();
+  const toast = useToast();
   const [sp, setSp] = useSearchParams();
 
   const page = sp.get('page') || '1';
@@ -59,6 +65,45 @@ export function SellerProfilePage() {
 
   const sellerName = results?.[0]?.seller_username || (sellerId ? t('user_number', { id: sellerId }) : '');
 
+  const [followNonce, setFollowNonce] = useState(0);
+  const isFollowing = useMemo(() => (sellerId ? isFollowingSeller(sellerId) : false), [sellerId, followNonce]);
+
+  const [watchedIds, setWatchedIds] = useState(() => new Set(listWatchlist().map((x) => x.id)));
+  useEffect(() => {
+    setWatchedIds(new Set(listWatchlist().map((x) => x.id)));
+  }, []);
+
+  function toggleFollow() {
+    if (!sellerId) return;
+    if (isFollowing) {
+      unfollowSeller(sellerId);
+      toast.push({ title: t('following_title'), description: t('follow_removed') });
+      setFollowNonce((n) => n + 1);
+      return;
+    }
+    followSeller({ id: sellerId, username: sellerName });
+    toast.push({ title: t('following_title'), description: t('follow_added') });
+    setFollowNonce((n) => n + 1);
+  }
+
+  function toggleWatch(listing, e) {
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
+    if (!listing?.id) return;
+    const id = Number(listing.id);
+    if (watchedIds.has(id)) {
+      removeWatch(id);
+      setWatchedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      return;
+    }
+    addWatch(id, { lastPrice: listing.price, lastCurrency: listing.currency });
+    setWatchedIds((prev) => new Set(prev).add(id));
+  }
+
   function goPage(p) {
     const next = new URLSearchParams(sp);
     next.set('page', String(p));
@@ -90,9 +135,16 @@ export function SellerProfilePage() {
                 </Text>
               </Flex>
             </Flex>
-            <Button variant="secondary" onClick={() => setReloadNonce((n) => n + 1)} disabled={loading}>
-              {t('refresh')}
-            </Button>
+            <Flex align="center" gap="2" wrap="wrap">
+              {isAuthenticated && sellerId ? (
+                <Button size="sm" variant="secondary" onClick={toggleFollow}>
+                  {isFollowing ? t('unfollow') : t('follow')}
+                </Button>
+              ) : null}
+              <Button variant="secondary" onClick={() => setReloadNonce((n) => n + 1)} disabled={loading}>
+                {t('refresh')}
+              </Button>
+            </Flex>
           </Flex>
         </CardHeader>
         <CardBody>
@@ -146,11 +198,16 @@ export function SellerProfilePage() {
                           </Text>
                         </Flex>
                       </Flex>
-                      <RTLink asChild underline="none" highContrast>
-                        <Link to={`/listings/${r.id}`}>
-                          <Button size="sm" variant="secondary">{t('view')}</Button>
-                        </Link>
-                      </RTLink>
+                      <Flex align="center" gap="2">
+                        <Button size="sm" variant="secondary" onClick={(e) => toggleWatch(r, e)}>
+                          {watchedIds.has(Number(r.id)) ? t('watch_remove') : t('watch_add')}
+                        </Button>
+                        <RTLink asChild underline="none" highContrast>
+                          <Link to={`/listings/${r.id}`}>
+                            <Button size="sm" variant="secondary">{t('view')}</Button>
+                          </Link>
+                        </RTLink>
+                      </Flex>
                     </Flex>
                   </Box>
                 </Card>
