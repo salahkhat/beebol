@@ -660,7 +660,7 @@ export function ListingDetailPage() {
                   </Grid>
 
                   <Flex gap="2" wrap="wrap">
-                    {isAuthenticated ? (
+                    {isAuthenticated && !isOwner ? (
                       <Button onClick={messageSeller}>
                         <Flex align="center" gap="2">
                           <Icon icon={MessageSquareText} size={16} />
@@ -670,18 +670,20 @@ export function ListingDetailPage() {
                         </Flex>
                       </Button>
                     ) : (
-                      <RTLink asChild underline="none">
-                        <Link to="/login" state={{ from: `/listings/${id}` }}>
-                          <Button>
-                            <Flex align="center" gap="2">
-                              <Icon icon={MessageSquareText} size={16} />
-                              <Text as="span" size="2">
-                                {t('login_to_message')}
-                              </Text>
-                            </Flex>
-                          </Button>
-                        </Link>
-                      </RTLink>
+                      !isAuthenticated ? (
+                        <RTLink asChild underline="none">
+                          <Link to="/login" state={{ from: `/listings/${id}` }}>
+                            <Button>
+                              <Flex align="center" gap="2">
+                                <Icon icon={MessageSquareText} size={16} />
+                                <Text as="span" size="2">
+                                  {t('login_to_message')}
+                                </Text>
+                              </Flex>
+                            </Button>
+                          </Link>
+                        </RTLink>
+                      ) : null
                     )}
                   </Flex>
                 </Flex>
@@ -788,40 +790,40 @@ export function ListingDetailPage() {
                           </Button>
                         </Flex>
                       ) : null}
-
-                      {isOwner ? (
-                        <Card>
-                          <Box p={{ initial: '4', sm: '5' }}>
-                            <Flex direction="column" gap="2">
-                              <Text size="2" color="gray">
-                                {t('detail_uploadImage')}
-                              </Text>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                multiple
-                                onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
-                              />
-                              <Input
-                                placeholder={t('create_photos_alt_optional')}
-                                value={uploadAlt}
-                                onChange={(e) => setUploadAlt(e.target.value)}
-                              />
-                              <Flex gap="2" wrap="wrap">
-                                <Button size="sm" onClick={uploadImages} disabled={uploading || uploadFiles.length === 0}>
-                                  {uploading ? t('loading') : t('detail_upload')}
-                                </Button>
-                              </Flex>
-                            </Flex>
-                          </Box>
-                        </Card>
-                      ) : null}
                     </Flex>
                   ) : (
                     <Text size="2" color="gray" mt="3">
                       {t('detail_noImages')}
                     </Text>
                   )}
+
+                  {isOwner ? (
+                    <Card mt="3">
+                      <Box p={{ initial: '4', sm: '5' }}>
+                        <Flex direction="column" gap="2">
+                          <Text size="2" color="gray">
+                            {t('detail_uploadImage')}
+                          </Text>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
+                          />
+                          <Input
+                            placeholder={t('create_photos_alt_optional')}
+                            value={uploadAlt}
+                            onChange={(e) => setUploadAlt(e.target.value)}
+                          />
+                          <Flex gap="2" wrap="wrap">
+                            <Button size="sm" onClick={uploadImages} disabled={uploading || uploadFiles.length === 0}>
+                              {uploading ? t('loading') : t('detail_upload')}
+                            </Button>
+                          </Flex>
+                        </Flex>
+                      </Box>
+                    </Card>
+                  ) : null}
                 </Box>
               </Grid>
 

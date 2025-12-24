@@ -485,7 +485,7 @@ class ListingViewSet(viewsets.ModelViewSet):
     def images(self, request, pk=None):
         listing = self.get_object()
         if request.method == "GET":
-            return Response(ListingImageSerializer(listing.images.all(), many=True).data)
+            return Response(ListingImageSerializer(listing.images.all(), many=True, context={"request": request}).data)
 
         if listing.seller != request.user:
             return Response({"detail": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
@@ -494,12 +494,12 @@ class ListingViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         image = ListingImage.objects.create(listing=listing, **serializer.validated_data)
         self._mark_pending_if_seller_change(listing)
-        return Response(ListingImageSerializer(image).data, status=status.HTTP_201_CREATED)
+        return Response(ListingImageSerializer(image, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
     @action(
         detail=True,
         methods=["delete"],
-        url_path=r"images/(?P<image_id>[^/.]+)",
+        url_path=r"images/(?P<image_id>\d+)",
         permission_classes=[IsAuthenticated],
     )
     def delete_image(self, request, pk=None, image_id=None):
@@ -567,7 +567,7 @@ class ListingViewSet(viewsets.ModelViewSet):
         self._mark_pending_if_seller_change(listing)
 
         refreshed = listing.images.order_by("sort_order", "id")
-        return Response(ListingImageSerializer(refreshed, many=True).data)
+        return Response(ListingImageSerializer(refreshed, many=True, context={"request": request}).data)
 
     @action(detail=True, methods=["get", "post"], permission_classes=[IsAuthenticatedOrReadOnly])
     def questions(self, request, pk=None):
