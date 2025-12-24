@@ -37,6 +37,9 @@ export function AdminModerationPage() {
   const [error, setError] = useState(null);
   const [reloadNonce, setReloadNonce] = useState(0);
 
+  const [mode, setMode] = useState('listings');
+  const [reportSaving, setReportSaving] = useState(false);
+
   const [dialog, setDialog] = useState({ open: false, listing: null, action: null, ids: [] });
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [bulkSaving, setBulkSaving] = useState(false);
@@ -52,10 +55,17 @@ export function AdminModerationPage() {
     setLoading(true);
     setError(null);
     try {
-      const base = showRemoved
-        ? { include_removed: 1, is_removed: true }
-        : { moderation_status: 'pending', status: 'published' };
-      const res = await api.listings(showFlagged ? { ...base, is_flagged: true } : base, { auth: true });
+      const res = mode === 'reports'
+        ? await api.reports({ status: 'open' })
+        : await api.listings(
+            showFlagged
+              ? {
+                  ...(showRemoved ? { include_removed: 1, is_removed: true } : { moderation_status: 'pending', status: 'published' }),
+                  is_flagged: true,
+                }
+              : (showRemoved ? { include_removed: 1, is_removed: true } : { moderation_status: 'pending', status: 'published' }),
+            { auth: true },
+          );
       setData(res);
     } catch (e) {
       setError(e);
@@ -66,21 +76,20 @@ export function AdminModerationPage() {
 
   useEffect(() => {
     refresh();
-  }, [reloadNonce]);
+    clearSelection();
+  }, [reloadNonce, mode, showRemoved, showFlagged]);
 
   useEffect(() => {
-    refresh();
-    clearSelection();
-  }, [showRemoved]);
+    if (mode !== 'listings') {
+      setShowRemoved(false);
+      setShowFlagged(false);
+    }
+  }, [mode]);
 
-  useEffect(() => {
-    refresh();
-    clearSelection();
-  }, [showFlagged]);
+  const listingResults = useMemo(() => (mode === 'listings' ? data?.results || [] : []), [data, mode]);
+  const reportResults = useMemo(() => (mode === 'reports' ? data?.results || [] : []), [data, mode]);
 
-  const results = useMemo(() => data?.results || [], [data]);
-
-  const allIds = Array.isArray(results) ? results.map((r) => r.id).filter(Boolean) : [];
+  const allIds = Array.isArray(listingResults) ? listingResults.map((r) => r.id).filter(Boolean) : [];
   const selectedCount = selectedIds.size;
   const allSelected = allIds.length > 0 && allIds.every((id) => selectedIds.has(id));
 
@@ -230,19 +239,53 @@ export function AdminModerationPage() {
     }
   }
 
+  function reportReasonLabel(code) {
+    if (!code) return '';
+    const key = `report_reason_${code}`;
+    const translated = t(key);
+    return translated === key ? String(code) : translated;
+  }
+
+  async function setReportStatus(reportId, status) {
+    if (!reportId) return;
+    setReportSaving(true);
+    try {
+      await api.updateReportStatus(reportId, status);
+      toast.push({
+        title: t('reports_title'),
+        description: status === 'resolved' ? t('report_resolved') : t('report_dismissed'),
+      });
+      await refresh();
+    } catch (e) {
+      toast.push({ title: t('reports_title'), description: e instanceof ApiError ? e.message : String(e), variant: 'error' });
+    } finally {
+      setReportSaving(false);
+    }
+  }
+
   return (
     <Flex direction="column" gap="5">
       <Flex align="center" justify="between" gap="3" wrap="wrap">
         <Heading size="5">{t('moderation_title')}</Heading>
         <Flex align="center" gap="2" wrap="wrap">
-          <label className="inline-flex items-center gap-2">
-            <input type="checkbox" checked={showRemoved} onChange={(e) => setShowRemoved(e.target.checked)} />
-            <Text size="2">{t('mod_showRemoved')}</Text>
-          </label>
-          <label className="inline-flex items-center gap-2">
-            <input type="checkbox" checked={showFlagged} onChange={(e) => setShowFlagged(e.target.checked)} />
-            <Text size="2">{t('mod_showFlagged')}</Text>
-          </label>
+          <Button size="sm" variant={mode === 'listings' ? 'primary' : 'secondary'} onClick={() => setMode('listings')}>
+            {t('moderation_mode_listings')}
+          </Button>
+          <Button size="sm" variant={mode === 'reports' ? 'primary' : 'secondary'} onClick={() => setMode('reports')}>
+            {t('moderation_mode_reports')}
+          </Button>
+          {mode === 'listings' ? (
+            <label className="inline-flex items-center gap-2">
+              <input type="checkbox" checked={showRemoved} onChange={(e) => setShowRemoved(e.target.checked)} />
+              <Text size="2">{t('mod_showRemoved')}</Text>
+            </label>
+          ) : null}
+          {mode === 'listings' ? (
+            <label className="inline-flex items-center gap-2">
+              <input type="checkbox" checked={showFlagged} onChange={(e) => setShowFlagged(e.target.checked)} />
+              <Text size="2">{t('mod_showFlagged')}</Text>
+            </label>
+          ) : null}
           <Button variant="secondary" onClick={refresh}>
             <Flex align="center" gap="2">
               <Icon icon={RefreshCcw} size={16} />
@@ -254,6 +297,66 @@ export function AdminModerationPage() {
         </Flex>
       </Flex>
 
+      {mode === 'reports' ? (
+        <Card>
+          <CardHeader>
+            <Text size="2" color="gray">{t('reports_open')}</Text>
+          </CardHeader>
+          <CardBody>
+            <InlineError error={error instanceof ApiError ? error : error} onRetry={() => setReloadNonce((n) => n + 1)} />
+
+            {loading ? (
+              <Flex direction="column" gap="3">
+                <Skeleton className="h-16 w-full" />
+                <Skeleton className="h-16 w-full" />
+                <Skeleton className="h-16 w-full" />
+              </Flex>
+            ) : reportResults.length ? (
+              <Flex direction="column" gap="3">
+                {reportResults.map((r) => (
+                  <div key={r.id} className="rounded-lg border border-[var(--gray-a5)] bg-[var(--color-panel-solid)] p-4">
+                    <Flex align="start" justify="between" gap="3" wrap="wrap">
+                      <div style={{ minWidth: 0 }}>
+                        <Text weight="bold" size="2" style={{ wordBreak: 'break-word' }}>
+                          {reportReasonLabel(r.reason)}
+                        </Text>
+                        <Text size="2" color="gray">
+                          {t('reported_by', { user: r.reporter_username || r.reporter })} · {formatDate(r.created_at)}
+                        </Text>
+                        <div className="mt-2">
+                          <Link to={`/listings/${r.listing}`} className="hover:underline">
+                            {t('report_view_listing')}{r.listing_title ? ` · ${r.listing_title}` : ''}
+                          </Link>
+                        </div>
+                        {r.message ? (
+                          <Text size="2" className="mt-2" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                            {r.message}
+                          </Text>
+                        ) : null}
+                      </div>
+
+                      <Flex align="center" gap="2" wrap="wrap">
+                        <Button size="sm" onClick={() => setReportStatus(r.id, 'resolved')} disabled={reportSaving}>
+                          {t('resolve')}
+                        </Button>
+                        <Button size="sm" variant="secondary" onClick={() => setReportStatus(r.id, 'dismissed')} disabled={reportSaving}>
+                          {t('dismiss')}
+                        </Button>
+                      </Flex>
+                    </Flex>
+                  </div>
+                ))}
+              </Flex>
+            ) : (
+              <Callout.Root variant="surface">
+                <Callout.Text>{t('reports_none')}</Callout.Text>
+              </Callout.Root>
+            )}
+          </CardBody>
+        </Card>
+      ) : null}
+
+      {mode === 'reports' ? null : (
       <Card>
         <CardHeader>
           <Text size="2" color="gray">
@@ -263,7 +366,7 @@ export function AdminModerationPage() {
         <CardBody>
           <InlineError error={error instanceof ApiError ? error : error} onRetry={() => setReloadNonce((n) => n + 1)} />
 
-          {!loading && results.length ? (
+          {!loading && listingResults.length ? (
             <Card className="mb-3">
               <Box p={{ initial: '4', sm: '5' }}>
                 <Flex align="center" justify="between" gap="3" wrap="wrap">
@@ -419,7 +522,7 @@ export function AdminModerationPage() {
             </Flex>
           ) : (
             <Flex direction="column" gap="5" mt="3">
-              {results.map((r) => (
+              {listingResults.map((r) => (
               <Card key={r.id}>
                 <Box p={{ initial: '5', sm: '6' }}>
                   <Flex align="start" justify="between" gap="4" wrap="wrap">
@@ -589,7 +692,7 @@ export function AdminModerationPage() {
                 </Box>
               </Card>
               ))}
-            {!loading && results.length === 0 ? (
+            {!loading && listingResults.length === 0 ? (
               <Callout.Root variant="surface">
                 <Callout.Text>
                   <Flex align="center" gap="2">
@@ -603,6 +706,7 @@ export function AdminModerationPage() {
           )}
         </CardBody>
       </Card>
+      )}
 
       <Dialog
         open={dialog.open}

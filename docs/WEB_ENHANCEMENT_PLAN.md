@@ -4,7 +4,7 @@ Date: 2025-12-23
 
 ## Scope & Constraints
 
-- Improve the existing web app experience significantly **without adding new routes/pages**.
+- Improve the existing web app experience significantly. (Later phases may introduce new routes/pages when needed.)
 - Stay consistent with the existing design system (Radix Themes + Tailwind tokens already in use).
 - Focus on “high leverage” work: reliability, accessibility, performance, and UI polish.
 
@@ -117,6 +117,18 @@ Date: 2025-12-23
 ### F) Moderation flagged filter (backend-powered)
 
 - On Moderation, staff can toggle “Show flagged” to view flagged listings only.
+
+## Phase 4 – New routes (feature expansion)
+
+### A) Seller profile
+
+- Add a public seller profile route: `/sellers/:id`
+- Show seller listings with pagination.
+
+### B) Admin dashboard
+
+- Add a staff-only dashboard route: `/admin/dashboard`
+- Show quick counts for pending/flagged/removed listings, and link into moderation.
 
 ## Acceptance Criteria
 

@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "api",
     "market",
     "messaging",
+    "reports",
     # classifieds domain app (local editable install from backend/)
     "django_classified",
 ]

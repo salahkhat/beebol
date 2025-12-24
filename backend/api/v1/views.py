@@ -19,6 +19,7 @@ from market.models import (
     ListingStatus,
 )
 from messaging.models import PrivateMessage, PrivateThread, PublicQuestion
+from reports.models import ListingReport, ReportStatus
 
 from .permissions import IsOwnerOrReadOnly
 from .serializers import (
@@ -38,6 +39,9 @@ from .serializers import (
     PublicQuestionSerializer,
     RegisterSerializer,
     UserMeSerializer,
+    ListingReportCreateSerializer,
+    ListingReportSerializer,
+    ListingReportStaffUpdateSerializer,
 )
 
 User = get_user_model()
@@ -99,6 +103,56 @@ class NeighborhoodViewSet(viewsets.ReadOnlyModelViewSet):
         if city:
             qs = qs.filter(city_id=city)
         return qs
+
+
+class ListingReportViewSet(
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    permission_classes = [IsAuthenticated]
+    ordering_fields = ["created_at"]
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = ListingReport.objects.select_related("listing", "reporter", "handled_by")
+
+        if getattr(user, "is_staff", False):
+            status_q = (self.request.query_params.get("status") or "").strip().lower()
+            if status_q:
+                qs = qs.filter(status=status_q)
+            else:
+                qs = qs.filter(status=ReportStatus.OPEN)
+            return qs
+
+        return qs.filter(reporter=user)
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return ListingReportCreateSerializer
+        if self.action in {"update", "partial_update"}:
+            return ListingReportStaffUpdateSerializer
+        return ListingReportSerializer
+
+    def perform_create(self, serializer):
+        serializer.save(reporter=self.request.user, status=ReportStatus.OPEN)
+
+    def partial_update(self, request, *args, **kwargs):
+        if not getattr(request.user, "is_staff", False):
+            return Response({"detail": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
+
+        report = self.get_object()
+        serializer = ListingReportStaffUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        desired = serializer.validated_data["status"]
+
+        if report.status != desired:
+            report.set_status(desired, actor=request.user)
+            report.save(update_fields=["status", "handled_by", "handled_at", "updated_at"])
+
+        return Response(ListingReportSerializer(report).data)
 
 
 class ListingViewSet(viewsets.ModelViewSet):

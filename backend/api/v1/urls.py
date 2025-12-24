@@ -13,6 +13,7 @@ from .views import (
     PrivateThreadViewSet,
     PublicQuestionViewSet,
     RegisterView,
+    ListingReportViewSet,
 )
 
 router = DefaultRouter()
@@ -23,6 +24,7 @@ router.register(r"neighborhoods", NeighborhoodViewSet, basename="neighborhood")
 router.register(r"listings", ListingViewSet, basename="listing")
 router.register(r"questions", PublicQuestionViewSet, basename="question")
 router.register(r"threads", PrivateThreadViewSet, basename="thread")
+router.register(r"reports", ListingReportViewSet, basename="report")
 
 urlpatterns = [
     path("health/", HealthView.as_view(), name="v1-health"),

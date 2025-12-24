@@ -3,6 +3,7 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Container, Flex, Link as RTLink, SegmentedControl, Text } from '@radix-ui/themes';
 import {
   LayoutList,
+  LayoutDashboard,
   MessageSquare,
   PlusCircle,
   ShieldCheck,
@@ -39,6 +40,7 @@ export function AppLayout() {
 
   const currentTab = useMemo(() => {
     const p = location.pathname || '';
+    if (p.startsWith('/admin/dashboard')) return 'dashboard';
     if (p.startsWith('/admin/moderation')) return 'moderation';
     if (p.startsWith('/threads')) return 'threads';
     if (p.startsWith('/my')) return 'my';
@@ -53,6 +55,7 @@ export function AppLayout() {
         { value: 'create', to: '/create', label: t('nav_create'), icon: PlusCircle, show: isAuthenticated },
         { value: 'my', to: '/my', label: t('nav_my'), icon: User, show: isAuthenticated },
         { value: 'threads', to: '/threads', label: t('nav_messages'), icon: MessageSquare, show: isAuthenticated },
+        { value: 'dashboard', to: '/admin/dashboard', label: t('nav_dashboard'), icon: LayoutDashboard, show: isStaff },
         { value: 'moderation', to: '/admin/moderation', label: t('nav_moderation'), icon: ShieldCheck, show: isStaff },
       ].filter((x) => x.show),
     [isAuthenticated, isStaff, t],
@@ -177,6 +180,11 @@ export function AppLayout() {
                     ) : null}
                     {isStaff ? (
                       <DropdownItem asChild>
+                        <Link to="/admin/dashboard">{t('nav_dashboard')}</Link>
+                      </DropdownItem>
+                    ) : null}
+                    {isStaff ? (
+                      <DropdownItem asChild>
                         <Link to="/admin/moderation">{t('nav_moderation')}</Link>
                       </DropdownItem>
                     ) : null}
@@ -253,6 +261,13 @@ export function AppLayout() {
                     </Link>
                   </DropdownItem>
                   <DropdownItem asChild>
+                    <Link to="/saved-searches">
+                      <Text as="span" size="2">
+                        {t('nav_saved_searches')}
+                      </Text>
+                    </Link>
+                  </DropdownItem>
+                  <DropdownItem asChild>
                     <Link to="/create">
                       <Flex align="center" gap="2">
                         <Icon icon={PlusCircle} size={16} />
@@ -262,6 +277,18 @@ export function AppLayout() {
                       </Flex>
                     </Link>
                   </DropdownItem>
+                  {isStaff ? (
+                    <DropdownItem asChild>
+                      <Link to="/admin/dashboard">
+                        <Flex align="center" gap="2">
+                          <Icon icon={LayoutDashboard} size={16} />
+                          <Text as="span" size="2">
+                            {t('nav_dashboard')}
+                          </Text>
+                        </Flex>
+                      </Link>
+                    </DropdownItem>
+                  ) : null}
                   {isStaff ? (
                     <DropdownItem asChild>
                       <Link to="/admin/moderation">

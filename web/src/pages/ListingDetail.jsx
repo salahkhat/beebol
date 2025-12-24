@@ -18,6 +18,7 @@ import { useToast } from '../ui/Toast';
 import { useI18n } from '../i18n/i18n';
 import { FavoriteButton } from '../ui/FavoriteButton';
 import { pushRecentlyViewed } from '../lib/recentlyViewed';
+import { addCompareId, formatIdsParam } from '../lib/compare';
 
 function moderationBadgeVariant(m) {
   if (m === 'approved') return 'ok';
@@ -237,6 +238,12 @@ export function ListingDetailPage() {
     }
   }
 
+  function addToCompare() {
+    const nextIds = addCompareId(Number(id));
+    toast.push({ title: t('compare_title'), description: t('compare_added') });
+    nav(`/compare?ids=${encodeURIComponent(formatIdsParam(nextIds))}`);
+  }
+
   function listingStatusLabel(code) {
     if (!code) return '';
     const key = `status_${code}`;
@@ -443,6 +450,32 @@ export function ListingDetailPage() {
                     </Text>
                   </Flex>
                 </Button>
+                <Button variant="secondary" size="sm" onClick={addToCompare}>
+                  <Text as="span" size="2">
+                    {t('compare_add')}
+                  </Text>
+                </Button>
+                {isAuthenticated ? (
+                  <RTLink asChild underline="none">
+                    <Link to={`/reports/new?listing=${data.id}`}>
+                      <Button variant="secondary" size="sm">
+                        <Text as="span" size="2">
+                          {t('report')}
+                        </Text>
+                      </Button>
+                    </Link>
+                  </RTLink>
+                ) : (
+                  <RTLink asChild underline="none">
+                    <Link to="/login" state={{ from: `/listings/${id}` }}>
+                      <Button variant="secondary" size="sm">
+                        <Text as="span" size="2">
+                          {t('login_to_report')}
+                        </Text>
+                      </Button>
+                    </Link>
+                  </RTLink>
+                )}
               </Flex>
             ) : null}
           </Flex>
@@ -480,7 +513,11 @@ export function ListingDetailPage() {
                   <Text as="span" color="gray">
                     {t('detail_seller')}:
                   </Text>{' '}
-                  {data.seller_username || data.seller_id}
+                  <RTLink asChild underline="always" highContrast>
+                    <Link to={`/sellers/${data.seller_id}`}>
+                      {data.seller_username || data.seller_id}
+                    </Link>
+                  </RTLink>
                 </Text>
                 <Text size="2">
                   <Text as="span" color="gray">

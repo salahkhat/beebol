@@ -181,4 +181,8 @@ export const api = {
   createThread: (listing_id) => apiFetchJson('api/v1/threads/', { method: 'POST', body: { listing_id } }),
   threadMessages: (id) => apiFetchJson(`api/v1/threads/${id}/messages/`),
   sendThreadMessage: (id, body) => apiFetchJson(`api/v1/threads/${id}/messages/`, { method: 'POST', body: { body } }),
+
+  reports: (params = {}) => apiFetchJson(`api/v1/reports/${toQuery(params)}`),
+  createReport: (data) => apiFetchJson('api/v1/reports/', { method: 'POST', body: data }),
+  updateReportStatus: (id, status) => apiFetchJson(`api/v1/reports/${id}/`, { method: 'PATCH', body: { status } }),
 };

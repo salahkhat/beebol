@@ -18,6 +18,8 @@ import { getRecentlyViewed, onRecentlyViewedChange } from '../lib/recentlyViewed
 import { formatDate } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { useI18n } from '../i18n/i18n';
+import { useToast } from '../ui/Toast';
+import { addSavedSearch, describeListingSearch } from '../lib/savedSearches';
 
 function moderationBadgeVariant(m) {
   if (m === 'approved') return 'ok';
@@ -29,6 +31,7 @@ function moderationBadgeVariant(m) {
 export function ListingsPage() {
   const { isAuthenticated } = useAuth();
   const { t, dir } = useI18n();
+  const toast = useToast();
   const [sp, setSp] = useSearchParams();
 
   function moderationLabel(code) {
@@ -206,6 +209,22 @@ export function ListingsPage() {
     setSp(next);
   }
 
+  function saveCurrentSearch() {
+    const next = new URLSearchParams(sp);
+    next.delete('page');
+    const queryString = next.toString();
+    const name = describeListingSearch({
+      search: params.search,
+      category: params.category,
+      governorate: params.governorate,
+      city: params.city,
+      neighborhood: params.neighborhood,
+      ordering: params.ordering,
+    });
+    addSavedSearch({ name, queryString });
+    toast.push({ title: t('saved_searches_title'), description: t('saved_search_saved') });
+  }
+
   return (
     <Flex direction="column" gap="5">
       {!loading && recentlyViewed.length ? (
@@ -257,6 +276,11 @@ export function ListingsPage() {
           {hasActiveFilters ? (
             <Button size="sm" variant="secondary" onClick={clearFilters}>
               {t('clear_filters')}
+            </Button>
+          ) : null}
+          {hasActiveFilters ? (
+            <Button size="sm" variant="secondary" onClick={saveCurrentSearch}>
+              {t('save_search')}
             </Button>
           ) : null}
           {isAuthenticated ? (

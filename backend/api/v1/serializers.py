@@ -3,6 +3,7 @@ from rest_framework import serializers
 
 from market.models import Category, City, Governorate, Listing, ListingImage, Neighborhood
 from messaging.models import PrivateMessage, PrivateThread, PublicQuestion
+from reports.models import ListingReport, ReportStatus
 
 User = get_user_model()
 
@@ -222,3 +223,43 @@ class PrivateThreadSerializer(serializers.ModelSerializer):
 
 class CreateThreadSerializer(serializers.Serializer):
     listing_id = serializers.IntegerField()
+
+
+class ListingReportSerializer(serializers.ModelSerializer):
+    listing_title = serializers.CharField(source="listing.title", read_only=True)
+    reporter_username = serializers.CharField(source="reporter.username", read_only=True)
+
+    class Meta:
+        model = ListingReport
+        fields = [
+            "id",
+            "listing",
+            "listing_title",
+            "reporter",
+            "reporter_username",
+            "reason",
+            "message",
+            "status",
+            "handled_by",
+            "handled_at",
+            "created_at",
+        ]
+        read_only_fields = [
+            "id",
+            "reporter",
+            "status",
+            "handled_by",
+            "handled_at",
+            "created_at",
+        ]
+
+
+class ListingReportCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ListingReport
+        fields = ["id", "listing", "reason", "message", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+
+class ListingReportStaffUpdateSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=[ReportStatus.RESOLVED, ReportStatus.DISMISSED])

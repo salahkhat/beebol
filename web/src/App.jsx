@@ -15,6 +15,11 @@ const LoginPage = lazy(() => import('./pages/Login').then((m) => ({ default: m.L
 const RegisterPage = lazy(() => import('./pages/Register').then((m) => ({ default: m.RegisterPage })));
 const CreateListingPage = lazy(() => import('./pages/CreateListing').then((m) => ({ default: m.CreateListingPage })));
 const MyListingsPage = lazy(() => import('./pages/MyListings').then((m) => ({ default: m.MyListingsPage })));
+const SellerProfilePage = lazy(() => import('./pages/SellerProfile').then((m) => ({ default: m.SellerProfilePage })));
+const SavedSearchesPage = lazy(() => import('./pages/SavedSearches').then((m) => ({ default: m.SavedSearchesPage })));
+const ReportListingPage = lazy(() => import('./pages/ReportListing').then((m) => ({ default: m.ReportListingPage })));
+const CompareListingsPage = lazy(() => import('./pages/CompareListings').then((m) => ({ default: m.CompareListingsPage })));
+const AdminDashboardPage = lazy(() => import('./pages/AdminDashboard').then((m) => ({ default: m.AdminDashboardPage })));
 const AdminModerationPage = lazy(() => import('./pages/AdminModeration').then((m) => ({ default: m.AdminModerationPage })));
 const ThreadsPage = lazy(() => import('./pages/Threads').then((m) => ({ default: m.ThreadsPage })));
 const ThreadDetailPage = lazy(() => import('./pages/ThreadDetail').then((m) => ({ default: m.ThreadDetailPage })));
@@ -86,6 +91,8 @@ export function App() {
           <Route path="/" element={<Navigate to="/listings" replace />} />
           <Route path="/listings" element={withSuspense(<ListingsPage />)} />
           <Route path="/listings/:id" element={withSuspense(<ListingDetailPage />)} />
+          <Route path="/sellers/:id" element={withSuspense(<SellerProfilePage />)} />
+          <Route path="/compare" element={withSuspense(<CompareListingsPage />)} />
           <Route path="/login" element={withSuspense(<LoginPage />)} />
           <Route path="/register" element={withSuspense(<RegisterPage />)} />
 
@@ -106,6 +113,22 @@ export function App() {
             }
           />
           <Route
+            path="/saved-searches"
+            element={
+              <RequireAuth>
+                {withSuspense(<SavedSearchesPage />)}
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/reports/new"
+            element={
+              <RequireAuth>
+                {withSuspense(<ReportListingPage />)}
+              </RequireAuth>
+            }
+          />
+          <Route
             path="/threads"
             element={
               <RequireAuth>
@@ -121,6 +144,15 @@ export function App() {
               </RequireAuth>
             }
           />
+          <Route
+            path="/admin/dashboard"
+            element={
+              <RequireStaff>
+                {withSuspense(<AdminDashboardPage />)}
+              </RequireStaff>
+            }
+          />
+
           <Route
             path="/admin/moderation"
             element={
