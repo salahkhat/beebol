@@ -29,6 +29,11 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.humanize",
+    "django.contrib.sites",
+    "django.contrib.sitemaps",
+    "bootstrapform",
+    "sorl.thumbnail",
     "corsheaders",
     "rest_framework",
     "rest_framework_simplejwt",
@@ -40,6 +45,8 @@ INSTALLED_APPS = [
     # classifieds domain app (local editable install from backend/)
     "django_classified",
 ]
+
+SITE_ID = 1
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",

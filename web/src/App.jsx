@@ -1,59 +1,138 @@
-import { useEffect, useState } from 'react';
+import { Suspense, lazy } from 'react';
+import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom';
 import './styles.css';
 
-function joinUrl(base, path) {
-  const trimmedBase = (base || '').replace(/\/+$/, '');
-  const trimmedPath = String(path || '').replace(/^\/+/, '');
-  if (!trimmedBase) return `/${trimmedPath}`;
-  return `${trimmedBase}/${trimmedPath}`;
+import { AppLayout } from './components/AppLayout';
+import { RequireAuth, RequireStaff } from './auth/RequireAuth';
+import { useI18n } from './i18n/i18n';
+import { Callout, Flex, Spinner, Text } from '@radix-ui/themes';
+import { Button } from './ui/Button';
+import { ErrorBoundary } from './ui/ErrorBoundary';
+
+const ListingsPage = lazy(() => import('./pages/Listings').then((m) => ({ default: m.ListingsPage })));
+const ListingDetailPage = lazy(() => import('./pages/ListingDetail').then((m) => ({ default: m.ListingDetailPage })));
+const LoginPage = lazy(() => import('./pages/Login').then((m) => ({ default: m.LoginPage })));
+const RegisterPage = lazy(() => import('./pages/Register').then((m) => ({ default: m.RegisterPage })));
+const CreateListingPage = lazy(() => import('./pages/CreateListing').then((m) => ({ default: m.CreateListingPage })));
+const MyListingsPage = lazy(() => import('./pages/MyListings').then((m) => ({ default: m.MyListingsPage })));
+const AdminModerationPage = lazy(() => import('./pages/AdminModeration').then((m) => ({ default: m.AdminModerationPage })));
+const ThreadsPage = lazy(() => import('./pages/Threads').then((m) => ({ default: m.ThreadsPage })));
+const ThreadDetailPage = lazy(() => import('./pages/ThreadDetail').then((m) => ({ default: m.ThreadDetailPage })));
+
+function RouteLoading() {
+  const { t } = useI18n();
+  return (
+    <Flex align="center" gap="2" className="py-6">
+      <Spinner size="2" />
+      <Text size="2" color="gray">
+        {t('loading')}
+      </Text>
+    </Flex>
+  );
+}
+
+function withSuspense(el) {
+  return <Suspense fallback={<RouteLoading />}>{el}</Suspense>;
+}
+
+function NotFound() {
+  const { t } = useI18n();
+  return (
+    <Callout.Root variant="surface">
+      <Callout.Text>{t('notFound')}</Callout.Text>
+      <div className="mt-3">
+        <Link to="/listings" className="inline-block">
+          <Button variant="secondary">{t('nav_listings')}</Button>
+        </Link>
+      </div>
+    </Callout.Root>
+  );
 }
 
 export function App() {
-  const [health, setHealth] = useState({ status: 'loading' });
-  const [error, setError] = useState(null);
-
-  const apiBase = process.env.API_BASE_URL || '';
-  const healthUrl = joinUrl(apiBase, 'api/health/');
-
-  useEffect(() => {
-    let cancelled = false;
-    async function run() {
-      try {
-        const res = await fetch(healthUrl);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = await res.json();
-        if (!cancelled) setHealth(json);
-      } catch (e) {
-        if (!cancelled) setError(e);
-      }
-    }
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
+  const { t } = useI18n();
   return (
-    <div className="container">
-      <div className="card">
-        <h1 style={{ marginTop: 0 }}>Beebol (React + Webpack)</h1>
-        <div className="row">
-          <span className="badge">Web: http://localhost:3000</span>
-          <span className="badge">Health: {healthUrl}</span>
-        </div>
+    <BrowserRouter>
+      <Routes>
+        <Route
+          element={
+            <ErrorBoundary
+              fallback={() => (
+                <div className="min-h-screen bg-[var(--gray-1)]">
+                  <div className="mx-auto w-full max-w-5xl px-4 py-10">
+                    <Callout.Root color="red" variant="surface">
+                      <Callout.Text>{t('unexpected_error')}</Callout.Text>
+                    </Callout.Root>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Button
+                        onClick={() => {
+                          window.location.reload();
+                        }}
+                      >
+                        {t('reload')}
+                      </Button>
+                      <Link to="/listings" className="inline-block">
+                        <Button variant="secondary">{t('nav_listings')}</Button>
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              )}
+            >
+              <AppLayout />
+            </ErrorBoundary>
+          }
+        >
+          <Route path="/" element={<Navigate to="/listings" replace />} />
+          <Route path="/listings" element={withSuspense(<ListingsPage />)} />
+          <Route path="/listings/:id" element={withSuspense(<ListingDetailPage />)} />
+          <Route path="/login" element={withSuspense(<LoginPage />)} />
+          <Route path="/register" element={withSuspense(<RegisterPage />)} />
 
-        <hr style={{ border: 0, borderTop: '1px solid #e6e8ee', margin: '16px 0' }} />
+          <Route
+            path="/create"
+            element={
+              <RequireAuth>
+                {withSuspense(<CreateListingPage />)}
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/my"
+            element={
+              <RequireAuth>
+                {withSuspense(<MyListingsPage />)}
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/threads"
+            element={
+              <RequireAuth>
+                {withSuspense(<ThreadsPage />)}
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/threads/:id"
+            element={
+              <RequireAuth>
+                {withSuspense(<ThreadDetailPage />)}
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/admin/moderation"
+            element={
+              <RequireStaff>
+                {withSuspense(<AdminModerationPage />)}
+              </RequireStaff>
+            }
+          />
 
-        <h2 style={{ margin: '0 0 8px' }}>Backend Health</h2>
-        {error ? (
-          <div>
-            <div>Failed to reach backend.</div>
-            <pre style={{ whiteSpace: 'pre-wrap' }}>{String(error.message || error)}</pre>
-          </div>
-        ) : (
-          <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{JSON.stringify(health, null, 2)}</pre>
-        )}
-      </div>
-    </div>
+          <Route path="*" element={<NotFound />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
   );
 }

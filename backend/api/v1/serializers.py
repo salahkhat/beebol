@@ -81,16 +81,41 @@ class ListingImageSerializer(serializers.ModelSerializer):
 
 
 class ListingListSerializer(serializers.ModelSerializer):
+    seller_id = serializers.IntegerField(source="seller.id", read_only=True)
+    seller_username = serializers.CharField(source="seller.username", read_only=True)
+    thumbnail = serializers.SerializerMethodField()
     category = CategorySerializer(read_only=True)
     governorate = GovernorateSerializer(read_only=True)
     city = CitySerializer(read_only=True)
     neighborhood = NeighborhoodSerializer(read_only=True)
+
+    def get_thumbnail(self, obj):
+        img = None
+        try:
+            img = obj.images.order_by("sort_order", "id").first()
+        except Exception:
+            img = None
+
+        if not img or not getattr(img, "image", None):
+            return None
+
+        try:
+            url = img.image.url
+            request = self.context.get("request")
+            if request is not None:
+                return request.build_absolute_uri(url)
+            return url
+        except Exception:
+            return None
 
     class Meta:
         model = Listing
         fields = [
             "id",
             "title",
+            "seller_id",
+            "seller_username",
+            "thumbnail",
             "price",
             "currency",
             "status",
@@ -165,16 +190,33 @@ class PublicQuestionAnswerSerializer(serializers.Serializer):
 
 
 class PrivateMessageSerializer(serializers.ModelSerializer):
+    sender_username = serializers.CharField(source="sender.username", read_only=True)
+
     class Meta:
         model = PrivateMessage
-        fields = ["id", "thread", "sender", "body", "created_at"]
+        fields = ["id", "thread", "sender", "sender_username", "body", "created_at"]
         read_only_fields = ["id", "sender", "created_at"]
 
 
 class PrivateThreadSerializer(serializers.ModelSerializer):
+    listing_title = serializers.CharField(source="listing.title", read_only=True)
+    last_message_body = serializers.CharField(read_only=True)
+    last_message_at = serializers.DateTimeField(read_only=True)
+    last_message_sender_username = serializers.CharField(read_only=True)
+
     class Meta:
         model = PrivateThread
-        fields = ["id", "listing", "buyer", "seller", "created_at"]
+        fields = [
+            "id",
+            "listing",
+            "listing_title",
+            "buyer",
+            "seller",
+            "created_at",
+            "last_message_body",
+            "last_message_at",
+            "last_message_sender_username",
+        ]
         read_only_fields = ["id", "buyer", "seller", "created_at"]
 
 
