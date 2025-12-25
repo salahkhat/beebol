@@ -88,7 +88,7 @@ export function CompareListingsPage() {
   }
 
   return (
-    <Flex direction="column" gap="5">
+    <Flex direction="column" gap="4">
       <Flex align="center" justify="between" gap="3" wrap="wrap">
         <Heading size="5">{t('compare_title')}</Heading>
         <Flex align="center" gap="2" wrap="wrap">
@@ -111,7 +111,7 @@ export function CompareListingsPage() {
           }
         />
       ) : loading ? (
-        <Grid columns={{ initial: '1', md: '2', lg: '3' }} gap="3">
+        <Grid columns={{ initial: '1', md: '2', lg: '3' }} gap="3" className="bb-stagger">
           {Array.from({ length: Math.min(3, ids.length) }).map((_, i) => (
             <Card key={i}>
               <CardHeader>
@@ -128,7 +128,7 @@ export function CompareListingsPage() {
           ))}
         </Grid>
       ) : (
-        <Grid columns={{ initial: '1', md: '2', lg: '3' }} gap="3">
+        <Grid columns={{ initial: '1', md: '2', lg: '3' }} gap="3" className="bb-stagger">
           {items.map((it) => (
             <Card key={it.id}>
               <CardHeader>

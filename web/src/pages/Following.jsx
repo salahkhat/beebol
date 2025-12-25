@@ -7,6 +7,7 @@ import { Button } from '../ui/Button';
 import { InlineError } from '../ui/InlineError';
 import { EmptyState } from '../ui/EmptyState';
 import { Skeleton } from '../ui/Skeleton';
+import { ListingThumbnail } from '../ui/ListingThumbnail';
 import { formatMoney } from '../lib/format';
 import { useI18n } from '../i18n/i18n';
 import { listFollowing, unfollowSeller } from '../lib/following';
@@ -79,7 +80,7 @@ export function FollowingPage() {
   }
 
   return (
-    <Flex direction="column" gap="5">
+    <Flex direction="column" gap="4">
       <Flex align="center" justify="between" gap="3" wrap="wrap">
         <Heading size="5">{t('following_title')}</Heading>
         <Flex align="center" gap="2" wrap="wrap">
@@ -118,7 +119,7 @@ export function FollowingPage() {
           ))}
         </Flex>
       ) : (
-        <Flex direction="column" gap="3">
+        <Flex direction="column" gap="3" className="bb-stagger">
           {following.map((s) => {
             const latest = latestBySeller[s.id] || [];
             const sellerLabel = s.username || t('user_number', { id: s.id });
@@ -141,16 +142,18 @@ export function FollowingPage() {
                 </CardHeader>
                 <CardBody>
                   {latest.length ? (
-                    <Grid columns={{ initial: '1', md: '3' }} gap="3">
+                    <Grid columns={{ initial: '1', md: '3' }} gap="3" className="bb-stagger">
                       {latest.map((it) => (
                         <Link key={it.id} to={`/listings/${it.id}`} style={{ textDecoration: 'none' }}>
-                          <Box className="rounded-lg border border-[var(--gray-a5)] bg-[var(--color-panel-solid)] p-3 transition-colors hover:bg-[var(--gray-a2)]">
+                          <Box className="rounded-lg border border-[var(--gray-a5)] bg-[var(--color-panel-solid)] p-2 transition-colors hover:bg-[var(--gray-a2)]">
                             <Flex gap="3" align="start">
-                              {it.thumbnail ? (
-                                <div className="h-12 w-12 shrink-0 overflow-hidden rounded-md border border-[var(--gray-a5)] bg-[var(--color-panel-solid)]">
-                                  <img src={it.thumbnail} alt="" className="h-full w-full object-cover" loading="lazy" />
-                                </div>
-                              ) : null}
+                              <ListingThumbnail
+                                src={it.thumbnail}
+                                alt=""
+                                className="h-12 w-12"
+                                placeholder={t('detail_noImages')}
+                                ariaLabel={t('detail_noImages')}
+                              />
                               <div style={{ minWidth: 0 }}>
                                 <Text weight="bold" size="2" style={{ wordBreak: 'break-word' }}>
                                   {it.title || t('listing_number', { id: it.id })}

@@ -136,7 +136,7 @@ export function AppLayout() {
       </a>
       <header className="sticky top-0 z-40 border-b border-[var(--gray-a5)] bg-[var(--color-panel-solid)]/90 backdrop-blur">
         <Container size="4">
-          <Flex align="center" justify="between" gap="3" py="3">
+          <Flex align="center" justify="between" gap="3" py="2">
             <Flex align="center" gap="3" minWidth="0" style={{ flex: 1 }}>
               <RTLink asChild highContrast underline="none">
                 <Link to="/listings">
@@ -229,13 +229,10 @@ export function AppLayout() {
                 variant="secondary"
                 onClick={toggle}
                 title={appearance === 'dark' ? t('theme_light') : t('theme_dark')}
+                aria-label={appearance === 'dark' ? t('theme_light') : t('theme_dark')}
+                className="px-2"
               >
-                <Flex align="center" gap="2">
-                  <Icon icon={appearance === 'dark' ? Sun : Moon} size={16} />
-                  <Text as="span" size="2">
-                    {appearance === 'dark' ? t('theme_light') : t('theme_dark')}
-                  </Text>
-                </Flex>
+                <Icon icon={appearance === 'dark' ? Sun : Moon} size={16} />
               </Button>
               {isAuthenticated ? (
                 <Dropdown
@@ -371,14 +368,16 @@ export function AppLayout() {
       </header>
 
       <main id="main" tabIndex={-1} className="focus:outline-none">
-        <Container size="4" py={{ initial: '6', sm: '7' }}>
-          <Outlet />
+        <Container size="4" py={{ initial: '4', sm: '5' }}>
+          <div key={`${location.pathname}${location.search}`} className="bb-animate-enter">
+            <Outlet />
+          </div>
         </Container>
       </main>
 
       <footer className="border-t border-[var(--gray-a5)] bg-[var(--color-panel-solid)]">
         <Container size="4">
-          <Flex py="4" justify="between" align="center">
+          <Flex py="3" justify="between" align="center">
             <Text size="1" color="gray">
               {t('appName')}
             </Text>

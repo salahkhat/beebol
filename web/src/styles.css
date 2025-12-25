@@ -1,6 +1,12 @@
 @import "tailwindcss";
 
 @layer base {
+  :root {
+    --bb-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --bb-dur-fast: 140ms;
+    --bb-dur: 220ms;
+  }
+
   html,
   body {
     height: 100%;
@@ -9,5 +15,184 @@
   body {
     margin: 0;
     font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, Tahoma, sans-serif;
+    background: var(--gray-1);
+    color: var(--gray-12);
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background: var(--accent-a4, var(--gray-a4));
+  }
+
+  img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  :where(a, button, input, select, textarea, [role='button'], [tabindex]):focus-visible {
+    outline: 2px solid var(--accent-a8, var(--gray-a8));
+    outline-offset: 2px;
+  }
+}
+
+@keyframes bb-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes bb-scale-fade {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes bb-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes bb-toast-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+
+@keyframes bb-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@layer components {
+  .bb-animate-enter {
+    animation: bb-fade-up var(--bb-dur) var(--bb-ease-out) both;
+  }
+
+  .bb-stagger > * {
+    animation: bb-fade-up var(--bb-dur) var(--bb-ease-out) both;
+  }
+
+  .bb-stagger > :nth-child(1) { animation-delay: 0ms; }
+  .bb-stagger > :nth-child(2) { animation-delay: 60ms; }
+  .bb-stagger > :nth-child(3) { animation-delay: 120ms; }
+  .bb-stagger > :nth-child(4) { animation-delay: 180ms; }
+  .bb-stagger > :nth-child(5) { animation-delay: 240ms; }
+  .bb-stagger > :nth-child(6) { animation-delay: 300ms; }
+  .bb-stagger > :nth-child(7) { animation-delay: 360ms; }
+  .bb-stagger > :nth-child(8) { animation-delay: 420ms; }
+  .bb-stagger > :nth-child(9) { animation-delay: 480ms; }
+  .bb-stagger > :nth-child(10) { animation-delay: 540ms; }
+  .bb-stagger > :nth-child(11) { animation-delay: 600ms; }
+  .bb-stagger > :nth-child(12) { animation-delay: 660ms; }
+
+  .bb-btn {
+    transition:
+      transform var(--bb-dur-fast) var(--bb-ease-out),
+      background-color var(--bb-dur-fast) var(--bb-ease-out),
+      border-color var(--bb-dur-fast) var(--bb-ease-out);
+    will-change: transform;
+  }
+
+  .bb-btn:active {
+    transform: translateY(1px) scale(0.99);
+  }
+
+  .bb-card {
+    transition:
+      transform var(--bb-dur-fast) var(--bb-ease-out),
+      background-color var(--bb-dur-fast) var(--bb-ease-out),
+      border-color var(--bb-dur-fast) var(--bb-ease-out);
+  }
+
+  .bb-card:hover {
+    transform: translateY(-1px);
+    background-color: var(--gray-a2);
+  }
+
+  .bb-card:active {
+    transform: translateY(0);
+  }
+
+  .bb-popover[data-state='open'] {
+    animation: bb-scale-fade var(--bb-dur-fast) var(--bb-ease-out) both;
+  }
+
+  .bb-skeleton {
+    background-color: var(--gray-a3);
+    background-image: linear-gradient(
+      90deg,
+      var(--gray-a3) 0%,
+      var(--gray-a2) 35%,
+      var(--gray-a4) 50%,
+      var(--gray-a2) 65%,
+      var(--gray-a3) 100%
+    );
+    background-size: 200% 100%;
+    animation: bb-shimmer 1.3s var(--bb-ease-out) infinite;
+  }
+
+  .bb-toast[data-state='open'] {
+    animation: bb-toast-in var(--bb-dur) var(--bb-ease-out) both;
+  }
+
+  .bb-toast[data-state='closed'] {
+    animation: bb-toast-out var(--bb-dur-fast) var(--bb-ease-out) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bb-animate-enter {
+    animation: none;
+  }
+  .bb-stagger > * {
+    animation: none;
+  }
+  .bb-btn,
+  .bb-card {
+    transition: none;
+    will-change: auto;
+  }
+  .bb-btn:active,
+  .bb-card:hover,
+  .bb-card:active {
+    transform: none;
+  }
+  .bb-popover[data-state='open'],
+  .bb-toast[data-state='open'],
+  .bb-toast[data-state='closed'] {
+    animation: none;
+  }
+
+  .bb-skeleton {
+    animation: none;
+    background-image: none;
   }
 }

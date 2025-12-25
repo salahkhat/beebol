@@ -33,13 +33,13 @@ export function ToastProvider({ children }) {
               if (!open) dismiss(t.id);
             }}
             className={cn(
-              'rounded-xl border border-black/10 bg-white p-3 shadow-sm',
-              t.variant === 'error' && 'border-red-600/30',
+              'bb-toast rounded-xl border border-[var(--gray-a5)] bg-[var(--color-panel-solid)] p-3',
+              t.variant === 'error' && 'border-[var(--red-a6)]',
             )}
           >
             <ToastPrimitive.Title className="text-sm font-semibold">{t.title}</ToastPrimitive.Title>
             {t.description ? (
-              <ToastPrimitive.Description className="mt-1 text-sm text-black/70">
+              <ToastPrimitive.Description className="mt-1 text-sm text-[var(--gray-11)]">
                 {t.description}
               </ToastPrimitive.Description>
             ) : null}

@@ -1,5 +1,6 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const CopyWebpackPlugin = require('copy-webpack-plugin');
 const webpack = require('webpack');
 
 module.exports = {
@@ -36,6 +37,17 @@ module.exports = {
     new HtmlWebpackPlugin({
       template: path.resolve(__dirname, 'public', 'index.html'),
     }),
+    new CopyWebpackPlugin({
+      patterns: [
+        {
+          from: path.resolve(__dirname, 'public'),
+          to: '.',
+          globOptions: {
+            ignore: ['**/index.html'],
+          },
+        },
+      ],
+    }),
   ],
   optimization: {
     runtimeChunk: 'single',
@@ -46,6 +58,11 @@ module.exports = {
   devServer: {
     port: 3000,
     historyApiFallback: true,
+    static: {
+      directory: path.resolve(__dirname, 'public'),
+      publicPath: '/',
+      watch: true,
+    },
     proxy: [
       {
         context: ['/api'],

@@ -30,7 +30,7 @@ const ThreadDetailPage = lazy(() => import('./pages/ThreadDetail').then((m) => (
 function RouteLoading() {
   const { t } = useI18n();
   return (
-    <Flex align="center" gap="2" className="py-6">
+    <Flex align="center" gap="2" className="py-4">
       <Spinner size="2" />
       <Text size="2" color="gray">
         {t('loading')}
@@ -67,7 +67,7 @@ export function App() {
             <ErrorBoundary
               fallback={() => (
                 <div className="min-h-screen bg-[var(--gray-1)]">
-                  <div className="mx-auto w-full max-w-5xl px-4 py-10">
+                  <div className="mx-auto w-full max-w-5xl px-4 py-6">
                     <Callout.Root color="red" variant="surface">
                       <Callout.Text>{t('unexpected_error')}</Callout.Text>
                     </Callout.Root>

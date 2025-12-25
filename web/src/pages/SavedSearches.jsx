@@ -53,7 +53,7 @@ export function SavedSearchesPage() {
   }
 
   return (
-    <Flex direction="column" gap="5">
+    <Flex direction="column" gap="4">
       <Flex align="center" justify="between" gap="3" wrap="wrap">
         <Heading size="5">{t('saved_searches_title')}</Heading>
         <Link to="/listings" style={{ textDecoration: 'none' }}>
@@ -80,11 +80,11 @@ export function SavedSearchesPage() {
           </CardHeader>
           <CardBody>
             <InlineError error={checkError instanceof ApiError ? checkError : checkError} />
-            <Flex direction="column" gap="3">
+            <Flex direction="column" gap="3" className="bb-stagger">
               {sorted.map((s) => (
                 <div
                   key={s.id}
-                  className="rounded-lg border border-[var(--gray-a5)] bg-[var(--color-panel-solid)] p-4 transition-colors hover:bg-[var(--gray-a2)]"
+                  className="rounded-lg border border-[var(--gray-a5)] bg-[var(--color-panel-solid)] p-2 transition-colors hover:bg-[var(--gray-a2)]"
                 >
                   <Flex align="start" justify="between" gap="3" wrap="wrap">
                     <div style={{ minWidth: 0 }}>
@@ -136,17 +136,14 @@ export function SavedSearchesPage() {
                       <Button
                         size="sm"
                         variant="secondary"
+                        className="px-2"
                         onClick={() => {
                           setItems(removeSavedSearch(s.id));
                         }}
                         title={t('delete')}
+                        aria-label={t('delete')}
                       >
-                        <Flex align="center" gap="2">
-                          <Icon icon={Trash2} size={16} />
-                          <Text as="span" size="2">
-                            {t('delete')}
-                          </Text>
-                        </Flex>
+                        <Icon icon={Trash2} size={16} />
                       </Button>
                     </Flex>
                   </Flex>

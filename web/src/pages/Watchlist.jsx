@@ -10,6 +10,7 @@ import { Icon } from '../ui/Icon';
 import { InlineError } from '../ui/InlineError';
 import { EmptyState } from '../ui/EmptyState';
 import { Skeleton } from '../ui/Skeleton';
+import { ListingThumbnail } from '../ui/ListingThumbnail';
 import { formatDate, formatMoney } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { useI18n } from '../i18n/i18n';
@@ -103,7 +104,7 @@ export function WatchlistPage() {
   }, [watchItems]);
 
   return (
-    <Flex direction="column" gap="5">
+    <Flex direction="column" gap="4">
       <Flex align="center" justify="between" gap="3" wrap="wrap">
         <Heading size="5">{t('watchlist_title')}</Heading>
         <Flex align="center" gap="2" wrap="wrap">
@@ -125,7 +126,7 @@ export function WatchlistPage() {
           action={<Button onClick={goBackToListings}>{t('watchlist_empty_cta')}</Button>}
         />
       ) : loading ? (
-        <Grid columns={{ initial: '1', md: '2', lg: '3' }} gap="3">
+        <Grid columns={{ initial: '1', md: '2', lg: '3' }} gap="3" className="bb-stagger">
           {Array.from({ length: Math.min(3, ids.length) }).map((_, i) => (
             <Card key={i}>
               <CardHeader>
@@ -142,7 +143,7 @@ export function WatchlistPage() {
           ))}
         </Grid>
       ) : (
-        <Grid columns={{ initial: '1', md: '2', lg: '3' }} gap="3">
+        <Grid columns={{ initial: '1', md: '2', lg: '3' }} gap="3" className="bb-stagger">
           {items.map((it) => {
             const prev = byId.get(it.id);
             const delta = priceDeltaLabel({
@@ -158,11 +159,13 @@ export function WatchlistPage() {
                 <CardHeader>
                   <Flex align="start" justify="between" gap="3">
                     <Flex gap="3" align="start" style={{ minWidth: 0, flex: 1 }}>
-                      {it.thumbnail ? (
-                        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-md border border-[var(--gray-a5)] bg-[var(--color-panel-solid)]">
-                          <img src={it.thumbnail} alt="" className="h-full w-full object-cover" loading="lazy" />
-                        </div>
-                      ) : null}
+                      <ListingThumbnail
+                        src={it.thumbnail}
+                        alt=""
+                        className="h-12 w-12"
+                        placeholder={t('detail_noImages')}
+                        ariaLabel={t('detail_noImages')}
+                      />
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <Link to={`/listings/${it.id}`} style={{ textDecoration: 'none' }}>
                           <Text weight="bold" size="3" style={{ wordBreak: 'break-word' }}>

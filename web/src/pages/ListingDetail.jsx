@@ -478,7 +478,7 @@ export function ListingDetailPage() {
   }
 
   return (
-    <Flex direction="column" gap="5">
+    <Flex direction="column" gap="4">
       <RTLink asChild underline="none" highContrast>
         <Link to="/listings">
           <Flex align="center" gap="2">
@@ -492,7 +492,7 @@ export function ListingDetailPage() {
 
       <Card>
         <CardHeader>
-          <Flex align="start" justify="between" gap="4" wrap="wrap">
+          <Flex align="start" justify="between" gap="3" wrap="wrap">
             <Flex direction="column" gap="1" style={{ minWidth: 0 }}>
               <Heading size="5" style={{ wordBreak: 'break-word' }}>
                 {data?.title ? data.title : loading ? <Skeleton className="h-6 w-72 max-w-full" /> : t('listings_title')}
@@ -560,7 +560,7 @@ export function ListingDetailPage() {
           <InlineError error={error instanceof ApiError ? error : error} onRetry={() => setReloadNonce((n) => n + 1)} />
 
           {loading && !data ? (
-            <Flex direction="column" gap="4">
+            <Flex direction="column" gap="3">
               <Skeleton className="h-4 w-full" />
               <Skeleton className="h-4 w-5/6" />
               <Skeleton className="h-4 w-2/3" />
@@ -577,7 +577,7 @@ export function ListingDetailPage() {
           ) : null}
 
           {data ? (
-            <Flex direction="column" gap="4">
+            <Flex direction="column" gap="3">
               <Dialog
                 open={imageDialogOpen}
                 onOpenChange={setImageDialogOpen}
@@ -618,8 +618,8 @@ export function ListingDetailPage() {
                 ) : null}
               </Dialog>
 
-              <Grid columns={{ initial: '1', md: '2' }} gap="5" align="start">
-                <Flex direction="column" gap="4" style={{ minWidth: 0 }}>
+              <Grid columns={{ initial: '1', md: '2' }} gap="4" align="start">
+                <Flex direction="column" gap="3" style={{ minWidth: 0 }}>
                   <Text size="2">
                     {data.description ? data.description : <Text as="span" color="gray">{t('detail_noDescription')}</Text>}
                   </Text>
@@ -799,7 +799,7 @@ export function ListingDetailPage() {
 
                   {isOwner ? (
                     <Card mt="3">
-                      <Box p={{ initial: '4', sm: '5' }}>
+                      <Box p={{ initial: '2', sm: '3' }}>
                         <Flex direction="column" gap="2">
                           <Text size="2" color="gray">
                             {t('detail_uploadImage')}
@@ -924,7 +924,7 @@ export function ListingDetailPage() {
                         const answerDraft = answerDrafts.get(q.id) || '';
                         return (
                           <Card key={q.id}>
-                            <Box p={{ initial: '4', sm: '5' }}>
+                            <Box p={{ initial: '2', sm: '3' }}>
                               <Flex direction="column" gap="2">
                                 <Text weight="bold" size="2">
                                   {q.question}

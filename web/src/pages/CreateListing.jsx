@@ -33,11 +33,13 @@ import { Badge } from '../ui/Badge';
 import { useToast } from '../ui/Toast';
 import { useI18n } from '../i18n/i18n';
 import { useAuth } from '../auth/AuthContext';
+import { CategoryCascadeSelect } from '../components/CategoryCascadeSelect';
+import { buildCategoryIndex } from '../lib/categoryTree';
 
 export function CreateListingPage() {
   const nav = useNavigate();
   const toast = useToast();
-  const { t, dir } = useI18n();
+  const { t, dir, locale } = useI18n();
   const auth = useAuth();
 
   const STEPS = useMemo(
@@ -95,9 +97,9 @@ export function CreateListingPage() {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const [c, g] = await Promise.all([api.categories(), api.governorates()]);
+      const [c, g] = await Promise.all([api.categoriesAll(), api.governorates()]);
       if (cancelled) return;
-      setCats(c.results || []);
+      setCats(Array.isArray(c) ? c : []);
       setGovs(g.results || []);
     }
     load().catch(() => {
@@ -333,7 +335,10 @@ export function CreateListingPage() {
 
   const priceOk = price === '' || !Number.isNaN(Number(price));
 
-  const canGoBasic = title.trim().length > 0 && category;
+  const catIdx = useMemo(() => buildCategoryIndex(cats), [cats]);
+  const categoryLeafOk = category ? catIdx.isLeaf(String(category)) : false;
+
+  const canGoBasic = title.trim().length > 0 && category && categoryLeafOk;
   const canGoPricing = currency && priceOk;
   const canGoLocation = governorate && city;
 
@@ -544,14 +549,16 @@ export function CreateListingPage() {
                   {t('listings_category')}
                 </Text>
               </Flex>
-              <Select value={category} onChange={(e) => setCategory(e.target.value)} onBlur={saveDraftSilent}>
-                <option value="">{t('select_placeholder')}</option>
-                {cats.map((c) => (
-                  <option key={c.id} value={String(c.id)}>
-                    {c.name_ar || c.name_en}
-                  </option>
-                ))}
-              </Select>
+              <CategoryCascadeSelect
+                categories={cats}
+                value={category}
+                onChange={(v) => setCategory(v)}
+                onBlur={saveDraftSilent}
+                locale={locale}
+                t={t}
+                required={showRequiredHints}
+                leafOnly
+              />
               {showRequiredHints && !category ? (
                 <Text size="1" color="red" mt="1" as="div">
                   {t('required')}
@@ -876,9 +883,7 @@ export function CreateListingPage() {
                     <Text as="span" color="gray">
                       {t('listings_category')}:
                     </Text>{' '}
-                    {cats.find((c) => String(c.id) === String(category))?.name_ar ||
-                      cats.find((c) => String(c.id) === String(category))?.name_en ||
-                      '-'}
+                    {category ? catIdx.getPathLabel(String(category), locale) || '-' : '-'}
                   </Text>
                   <Text size="2">
                     <Text as="span" color="gray">

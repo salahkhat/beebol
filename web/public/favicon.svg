@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Beebol">
+  <title>Beebol</title>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="white" stroke="black" stroke-width="2" />
+  <text x="32" y="41" text-anchor="middle" font-size="28" font-family="system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif" fill="black" font-weight="700">B</text>
+</svg>

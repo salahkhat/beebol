@@ -99,7 +99,7 @@ export function ReportListingPage() {
   }
 
   return (
-    <Flex direction="column" gap="5">
+    <Flex direction="column" gap="4">
       <Flex align="center" justify="between" gap="3" wrap="wrap">
         <Heading size="5">{t('report_title')}</Heading>
         <Link to={`/listings/${listingId}`} style={{ textDecoration: 'none' }}>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Box, Flex, Heading, Link as RTLink, Text } from '@radix-ui/themes';
-import { ArrowLeft, ArrowRight, Clock, MapPin, User } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Clock, Eye, EyeOff, MapPin, User } from 'lucide-react';
 import { api, ApiError } from '../lib/api';
 import { Card, CardBody, CardHeader } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -151,10 +151,10 @@ export function SellerProfilePage() {
           <InlineError error={error instanceof ApiError ? error : error} onRetry={() => setReloadNonce((n) => n + 1)} />
 
           {loading ? (
-            <Flex direction="column" gap="3" mt="3">
+            <Flex direction="column" gap="3" mt="3" className="bb-stagger">
               {Array.from({ length: 4 }).map((_, i) => (
                 <Card key={i}>
-                  <Box p={{ initial: '5', sm: '6' }}>
+                  <Box p={{ initial: '2', sm: '3' }}>
                     <Flex align="start" justify="between" gap="4" wrap="wrap">
                       <Flex direction="column" gap="2" style={{ minWidth: 0, flex: 1 }}>
                         <Skeleton className="h-4 w-3/4" />
@@ -168,14 +168,14 @@ export function SellerProfilePage() {
               ))}
             </Flex>
           ) : (
-            <Flex direction="column" gap="3" mt="3">
+            <Flex direction="column" gap="3" mt="3" className="bb-stagger">
               <Text size="2" color="gray">
                 {t('seller_listings_count', { count })}
               </Text>
 
               {results.map((r) => (
                 <Card key={r.id}>
-                  <Box p={{ initial: '5', sm: '6' }}>
+                  <Box p={{ initial: '2', sm: '3' }}>
                     <Flex align="start" justify="between" gap="4" wrap="wrap">
                       <Flex direction="column" gap="2" style={{ minWidth: 0, flex: 1 }}>
                         <RTLink asChild underline="none" highContrast>
@@ -199,8 +199,15 @@ export function SellerProfilePage() {
                         </Flex>
                       </Flex>
                       <Flex align="center" gap="2">
-                        <Button size="sm" variant="secondary" onClick={(e) => toggleWatch(r, e)}>
-                          {watchedIds.has(Number(r.id)) ? t('watch_remove') : t('watch_add')}
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="px-2"
+                          onClick={(e) => toggleWatch(r, e)}
+                          title={watchedIds.has(Number(r.id)) ? t('watch_remove') : t('watch_add')}
+                          aria-label={watchedIds.has(Number(r.id)) ? t('watch_remove') : t('watch_add')}
+                        >
+                          <Icon icon={watchedIds.has(Number(r.id)) ? EyeOff : Eye} size={16} />
                         </Button>
                         <RTLink asChild underline="none" highContrast>
                           <Link to={`/listings/${r.id}`}>

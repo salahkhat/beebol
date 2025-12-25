@@ -14,6 +14,7 @@ import { Select } from '../ui/Select';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { useToast } from '../ui/Toast';
+import { ListingThumbnail } from '../ui/ListingThumbnail';
 import { useI18n } from '../i18n/i18n';
 
 function moderationBadgeVariant(m) {
@@ -292,7 +293,7 @@ export function MyListingsPage() {
   }
 
   return (
-    <Flex direction="column" gap="5">
+    <Flex direction="column" gap="4">
       <Flex align="center" justify="between" gap="3" wrap="wrap">
         <Heading size="5">{t('my_title')}</Heading>
         <RTLink asChild underline="none">
@@ -317,8 +318,8 @@ export function MyListingsPage() {
           <InlineError error={error instanceof ApiError ? error : error} onRetry={() => setReloadNonce((n) => n + 1)} />
 
           {!loading && results.length ? (
-            <Card className="mb-3">
-              <Box p={{ initial: '4', sm: '5' }}>
+            <Card className="mb-2">
+              <Box p={{ initial: '2', sm: '3' }}>
                 <Flex align="center" justify="between" gap="3" wrap="wrap">
                   <Flex align="center" gap="3" wrap="wrap">
                     <div
@@ -368,10 +369,10 @@ export function MyListingsPage() {
           ) : null}
 
           {loading ? (
-            <Flex direction="column" gap="3" mt="3">
+            <Flex direction="column" gap="3" mt="3" className="bb-stagger">
               {Array.from({ length: 4 }).map((_, i) => (
                 <Card key={i}>
-                  <Box p={{ initial: '5', sm: '6' }}>
+                  <Box p={{ initial: '2', sm: '3' }}>
                     <Flex justify="between" gap="4" align="start" wrap="wrap">
                       <Flex gap="3" align="start" style={{ minWidth: 0, flex: 1 }}>
                         <Skeleton className="h-16 w-16 shrink-0 sm:h-20 sm:w-20" />
@@ -391,12 +392,12 @@ export function MyListingsPage() {
               ))}
             </Flex>
           ) : (
-            <Flex direction="column" gap="5" mt="3">
+            <Flex direction="column" gap="4" mt="3" className="bb-stagger">
               {results.map((r) => (
               <RTLink key={r.id} asChild underline="none" highContrast>
                 <Link to={`/listings/${r.id}`}>
                   <Card className="transition-colors hover:bg-[var(--gray-a2)]">
-                    <Box p={{ initial: '5', sm: '6' }}>
+                    <Box p={{ initial: '2', sm: '3' }}>
                       <Flex justify="between" gap="4" align="start" wrap="wrap">
                         <Flex gap="3" align="start" style={{ minWidth: 0, flex: 1 }}>
                           <div
@@ -414,11 +415,13 @@ export function MyListingsPage() {
                               />
                             </label>
                           </div>
-                          {r.thumbnail ? (
-                            <div className="h-16 w-16 shrink-0 overflow-hidden rounded-md border border-[var(--gray-a5)] bg-[var(--color-panel-solid)] sm:h-20 sm:w-20">
-                              <img src={r.thumbnail} alt="" className="h-full w-full object-cover" loading="lazy" />
-                            </div>
-                          ) : null}
+                          <ListingThumbnail
+                            src={r.thumbnail}
+                            alt=""
+                            className="h-16 w-16 sm:h-20 sm:w-20"
+                            placeholder={t('detail_noImages')}
+                            ariaLabel={t('detail_noImages')}
+                          />
 
                           <Flex direction="column" gap="2" style={{ minWidth: 0 }}>
                             {editingIds.has(r.id) ? (

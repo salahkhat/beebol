@@ -4,7 +4,7 @@ export function Dropdown({ trigger, children }) {
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>{trigger}</DropdownMenu.Trigger>
-      <DropdownMenu.Content>{children}</DropdownMenu.Content>
+      <DropdownMenu.Content className="bb-popover">{children}</DropdownMenu.Content>
     </DropdownMenu.Root>
   );
 }

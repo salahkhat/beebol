@@ -10,6 +10,7 @@ import { Dialog } from '../ui/Dialog';
 import { Icon } from '../ui/Icon';
 import { InlineError } from '../ui/InlineError';
 import { Skeleton } from '../ui/Skeleton';
+import { ListingThumbnail } from '../ui/ListingThumbnail';
 import { formatDate, formatMoney } from '../lib/format';
 import { useToast } from '../ui/Toast';
 import { useI18n } from '../i18n/i18n';
@@ -289,7 +290,7 @@ export function AdminModerationPage() {
   }
 
   return (
-    <Flex direction="column" gap="5">
+    <Flex direction="column" gap="4">
       <Flex align="center" justify="between" gap="3" wrap="wrap">
         <Heading size="5">{t('moderation_title')}</Heading>
         <Flex align="center" gap="2" wrap="wrap">
@@ -355,7 +356,7 @@ export function AdminModerationPage() {
             ) : reportResults.length ? (
               <Flex direction="column" gap="3">
                 {reportResults.map((r) => (
-                  <div key={r.id} className="rounded-lg border border-[var(--gray-a5)] bg-[var(--color-panel-solid)] p-4">
+                  <div key={r.id} className="rounded-lg border border-[var(--gray-a5)] bg-[var(--color-panel-solid)] p-2">
                     <Flex align="start" justify="between" gap="3" wrap="wrap">
                       <div style={{ minWidth: 0 }}>
                         <Text weight="bold" size="2" style={{ wordBreak: 'break-word' }}>
@@ -404,7 +405,7 @@ export function AdminModerationPage() {
 
                     {reportPreviewIds.has(Number(r.listing)) ? (
                       <Box mt="4">
-                        <div className="rounded-lg border border-[var(--gray-a5)] bg-[var(--color-panel-solid)] p-4">
+                        <div className="rounded-lg border border-[var(--gray-a5)] bg-[var(--color-panel-solid)] p-2">
                           {detailsLoadingIds.has(Number(r.listing)) && !detailsById[Number(r.listing)] ? (
                             <Flex direction="column" gap="2">
                               <Skeleton className="h-4 w-5/6" />
@@ -505,7 +506,7 @@ export function AdminModerationPage() {
 
           {!loading && listingResults.length ? (
             <Card className="mb-3">
-              <Box p={{ initial: '4', sm: '5' }}>
+              <Box p={{ initial: '2', sm: '3' }}>
                 <Flex align="center" justify="between" gap="3" wrap="wrap">
                   <Flex align="center" gap="3" wrap="wrap">
                     <div onClick={(e) => e.preventDefault()}>
@@ -638,7 +639,7 @@ export function AdminModerationPage() {
             <Flex direction="column" gap="3" mt="3">
               {Array.from({ length: 4 }).map((_, i) => (
                 <Card key={i}>
-                  <Box p={{ initial: '5', sm: '6' }}>
+                  <Box p={{ initial: '2', sm: '3' }}>
                     <Flex align="start" justify="between" gap="4" wrap="wrap">
                       <Flex gap="3" align="start" style={{ minWidth: 0, flex: 1 }}>
                         <Skeleton className="h-16 w-16 shrink-0 sm:h-20 sm:w-20" />
@@ -658,10 +659,10 @@ export function AdminModerationPage() {
               ))}
             </Flex>
           ) : (
-            <Flex direction="column" gap="5" mt="3">
+            <Flex direction="column" gap="4" mt="3">
               {listingResults.map((r) => (
               <Card key={r.id}>
-                <Box p={{ initial: '5', sm: '6' }}>
+                <Box p={{ initial: '2', sm: '3' }}>
                   <Flex align="start" justify="between" gap="4" wrap="wrap">
                     <Flex gap="3" align="start" style={{ minWidth: 0, flex: 1 }}>
                       <div
@@ -679,11 +680,13 @@ export function AdminModerationPage() {
                           />
                         </label>
                       </div>
-                      {r.thumbnail ? (
-                        <div className="h-16 w-16 shrink-0 overflow-hidden rounded-md border border-[var(--gray-a5)] bg-[var(--color-panel-solid)] sm:h-20 sm:w-20">
-                          <img src={r.thumbnail} alt="" className="h-full w-full object-cover" loading="lazy" />
-                        </div>
-                      ) : null}
+                      <ListingThumbnail
+                        src={r.thumbnail}
+                        alt=""
+                        className="h-16 w-16 sm:h-20 sm:w-20"
+                        placeholder={t('detail_noImages')}
+                        ariaLabel={t('detail_noImages')}
+                      />
 
                       <Flex direction="column" gap="2" style={{ minWidth: 0 }}>
                         <Text weight="bold" size="3" style={{ wordBreak: 'break-word' }}>

@@ -82,7 +82,7 @@ export function ThreadsPage() {
           <InlineError error={error instanceof ApiError ? error : error} onRetry={() => setReloadNonce((n) => n + 1)} />
 
           {loading ? (
-            <Flex direction="column" gap="2" mt="2">
+            <Flex direction="column" gap="2" mt="2" className="bb-stagger">
               {Array.from({ length: 6 }).map((_, i) => (
                 <Card key={i}>
                   <Box p="4">
@@ -98,7 +98,7 @@ export function ThreadsPage() {
               ))}
             </Flex>
           ) : (
-            <Flex direction="column" gap="2" mt="2">
+            <Flex direction="column" gap="2" mt="2" className="bb-stagger">
               {data.map((thread) => (
               <RTLink key={thread.id} asChild underline="none" highContrast>
                 <Link to={`/threads/${thread.id}`}>

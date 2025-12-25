@@ -164,7 +164,7 @@ export function ThreadDetailPage() {
           <InlineError error={error instanceof ApiError ? error : error} onRetry={() => setReloadNonce((n) => n + 1)} />
 
           {loading && messages.length === 0 ? (
-            <Flex direction="column" gap="3" mt="4">
+            <Flex direction="column" gap="3" mt="4" className="bb-stagger">
               {Array.from({ length: 5 }).map((_, i) => (
                 <Card key={i}>
                   <Box p="4">
@@ -180,7 +180,7 @@ export function ThreadDetailPage() {
             </Flex>
           ) : null}
 
-          <Flex direction="column" gap="3" mt="4">
+          <Flex direction="column" gap="3" mt="4" className="bb-stagger">
             {messages.map((m) => (
               <Card key={m.id}>
                 <Box p="4">

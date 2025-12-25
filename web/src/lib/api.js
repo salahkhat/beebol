@@ -88,7 +88,8 @@ async function refreshAccessToken() {
 }
 
 export async function apiFetchJson(path, { method = 'GET', body, headers, auth = true, _retry = false } = {}) {
-  const url = joinUrl(API_BASE_URL, path);
+  const isAbsolute = /^https?:\/\//i.test(String(path || ''));
+  const url = isAbsolute ? String(path) : joinUrl(API_BASE_URL, path);
   const h = new Headers(headers || {});
 
   if (auth) {
@@ -141,6 +142,33 @@ export async function apiFetchJson(path, { method = 'GET', body, headers, auth =
   return json;
 }
 
+async function apiFetchAllPages(path, { auth = false, maxPages = 50 } = {}) {
+  let next = path;
+  const out = [];
+  let pages = 0;
+
+  while (next && pages < maxPages) {
+    const data = await apiFetchJson(next, { auth });
+
+    // Unpaginated endpoint (array)
+    if (Array.isArray(data)) return data;
+
+    // Paginated endpoint (DRF PageNumberPagination)
+    if (data && typeof data === 'object' && Array.isArray(data.results)) {
+      out.push(...data.results);
+      next = data.next;
+      pages += 1;
+      if (!next) break;
+      continue;
+    }
+
+    // Fallback: unexpected shape
+    return out;
+  }
+
+  return out;
+}
+
 export const api = {
   health: () => apiFetchJson('api/v1/health/', { auth: false }),
   me: () => apiFetchJson('api/v1/me/'),
@@ -148,6 +176,7 @@ export const api = {
   token: (data) => apiFetchJson('api/v1/auth/token/', { method: 'POST', body: data, auth: false }),
 
   categories: () => apiFetchJson('api/v1/categories/', { auth: false }),
+  categoriesAll: () => apiFetchAllPages('api/v1/categories/?page_size=500', { auth: false }),
   governorates: () => apiFetchJson('api/v1/governorates/', { auth: false }),
   cities: ({ governorate } = {}) => apiFetchJson(`api/v1/cities/${toQuery({ governorate })}`, { auth: false }),
   neighborhoods: ({ city } = {}) => apiFetchJson(`api/v1/neighborhoods/${toQuery({ city })}`, { auth: false }),

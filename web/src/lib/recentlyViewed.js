@@ -1,5 +1,5 @@
 const KEY = 'beebol.recentlyViewed.v1';
-const MAX = 6;
+const MAX = 3;
 
 function safeParse(raw) {
   try {
@@ -12,7 +12,7 @@ function safeParse(raw) {
 export function getRecentlyViewed() {
   try {
     const parsed = safeParse(localStorage.getItem(KEY));
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed.slice(0, MAX) : [];
   } catch {
     return [];
   }

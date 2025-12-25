@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Box, Flex, Grid, Heading, Link as RTLink, Text } from '@radix-ui/themes';
-import { ChevronLeft, ChevronRight, Clock, MapPin, PlusCircle, SearchX } from 'lucide-react';
+import { ArrowUpDown, BookmarkPlus, ChevronLeft, ChevronRight, Clock, Eye, EyeOff, FilterX, MapPin, PlusCircle, Search, SearchX, Shapes } from 'lucide-react';
 import { api, ApiError } from '../lib/api';
 import { Card, CardBody, CardHeader } from '../ui/Card';
 import { Input } from '../ui/Input';
@@ -14,6 +14,8 @@ import { EmptyState } from '../ui/EmptyState';
 import { Skeleton } from '../ui/Skeleton';
 import { FavoriteButton } from '../ui/FavoriteButton';
 import { Dialog } from '../ui/Dialog';
+import { ListingThumbnail } from '../ui/ListingThumbnail';
+import { CategoryFilterPicker } from '../components/CategoryFilterPicker';
 import { formatMoney } from '../lib/format';
 import { getRecentlyViewed, onRecentlyViewedChange } from '../lib/recentlyViewed';
 import { formatDate } from '../lib/format';
@@ -32,7 +34,7 @@ function moderationBadgeVariant(m) {
 
 export function ListingsPage() {
   const { isAuthenticated } = useAuth();
-  const { t, dir } = useI18n();
+  const { t, dir, locale } = useI18n();
   const toast = useToast();
   const [sp, setSp] = useSearchParams();
 
@@ -90,7 +92,11 @@ export function ListingsPage() {
   }, []);
 
   const params = useMemo(() => {
-    const get = (k) => sp.get(k) || '';
+    const get = (k) => {
+      const v = sp.get(k);
+      return v == null ? '' : String(v);
+    };
+
     return {
       search: get('search'),
       category: get('category'),
@@ -124,9 +130,9 @@ export function ListingsPage() {
   useEffect(() => {
     let cancelled = false;
     async function loadLookups() {
-      const [c, g] = await Promise.all([api.categories(), api.governorates()]);
+      const [c, g] = await Promise.all([api.categoriesAll(), api.governorates()]);
       if (cancelled) return;
-      setCats(c.results || []);
+      setCats(Array.isArray(c) ? c : []);
       setGovs(g.results || []);
     }
     loadLookups().catch(() => {
@@ -257,7 +263,7 @@ export function ListingsPage() {
   }
 
   return (
-    <Flex direction="column" gap="5">
+    <Flex direction="column" gap="4">
       <Dialog
         open={imagePreview.open}
         onOpenChange={(open) => setImagePreview((p) => ({ ...p, open }))}
@@ -289,21 +295,22 @@ export function ListingsPage() {
                       <Box p="4">
                         <Flex justify="between" gap="3" align="start">
                           <Flex gap="3" align="start" style={{ minWidth: 0, flex: 1 }}>
-                            {rv.thumbnail ? (
-                              <button
-                                type="button"
-                                className="h-14 w-14 shrink-0 overflow-hidden rounded-md border border-[var(--gray-a5)] bg-[var(--color-panel-solid)] sm:h-16 sm:w-16"
-                                onClick={(e) => openImagePreview({ src: rv.thumbnail, title: rv.title || t('listing_number', { id: rv.id }) }, e)}
-                                aria-label={t('open_image_preview')}
-                              >
-                                <img
-                                  src={rv.thumbnail}
-                                  alt={rv.title || ''}
-                                  className="h-full w-full object-cover"
-                                  loading="lazy"
-                                />
-                              </button>
-                            ) : null}
+                            <ListingThumbnail
+                              src={rv.thumbnail}
+                              alt={rv.title || ''}
+                              className="h-14 w-14 sm:h-16 sm:w-16"
+                              placeholder={t('detail_noImages')}
+                              ariaLabel={rv.thumbnail ? t('open_image_preview') : t('detail_noImages')}
+                              onClick={
+                                rv.thumbnail
+                                  ? (e) =>
+                                      openImagePreview(
+                                        { src: rv.thumbnail, title: rv.title || t('listing_number', { id: rv.id }) },
+                                        e,
+                                      )
+                                  : undefined
+                              }
+                            />
                             <Flex direction="column" gap="1" style={{ minWidth: 0 }}>
                               <Text weight="bold" size="2" style={{ wordBreak: 'break-word' }}>
                                 {rv.title || t('listing_number', { id: rv.id })}
@@ -333,12 +340,22 @@ export function ListingsPage() {
           <Text size="2" color="gray">{count} {t('listings_total')}</Text>
           {hasActiveFilters ? (
             <Button size="sm" variant="secondary" onClick={clearFilters}>
-              {t('clear_filters')}
+              <Flex align="center" gap="2">
+                <Icon icon={FilterX} size={16} />
+                <Text as="span" size="2">
+                  {t('clear_filters')}
+                </Text>
+              </Flex>
             </Button>
           ) : null}
           {hasActiveFilters ? (
             <Button size="sm" variant="secondary" onClick={saveCurrentSearch}>
-              {t('save_search')}
+              <Flex align="center" gap="2">
+                <Icon icon={BookmarkPlus} size={16} />
+                <Text as="span" size="2">
+                  {t('save_search')}
+                </Text>
+              </Flex>
             </Button>
           ) : null}
           {isAuthenticated ? (
@@ -360,80 +377,122 @@ export function ListingsPage() {
 
       <Card>
         <CardHeader>
-          <Grid gap="4" columns={{ initial: '1', md: '5' }}>
-            <Box style={{ gridColumn: 'span 2 / span 2' }}>
-              <Input
-                value={searchDraft}
-                placeholder={t('listings_search_placeholder')}
-                onChange={(e) => setSearchDraft(e.target.value)}
-              />
-            </Box>
+          <Flex direction="column" gap="3">
+            <Grid gap="3" columns={{ initial: '1', md: '6' }} align="end">
+              <Box style={{ gridColumn: 'span 3 / span 3' }}>
+                <Flex align="center" gap="2" mb="2">
+                  <Search size={16} className="text-[var(--gray-11)]" aria-hidden="true" />
+                  <Text as="div" size="1" color="gray">
+                    {t('listings_search_placeholder')}
+                  </Text>
+                </Flex>
+                <Input value={searchDraft} placeholder={t('listings_search_placeholder')} onChange={(e) => setSearchDraft(e.target.value)} />
+              </Box>
 
-            <Select value={params.ordering} onChange={(e) => setParam('ordering', e.target.value)}>
-              <option value="">{t('listings_sort')}</option>
-              <option value="-created_at">{t('sort_newest')}</option>
-              <option value="created_at">{t('sort_oldest')}</option>
-              <option value="price">{t('sort_price_low')}</option>
-              <option value="-price">{t('sort_price_high')}</option>
-            </Select>
+              <Box style={{ gridColumn: 'span 1 / span 1' }}>
+                <Flex align="center" gap="2" mb="2">
+                  <ArrowUpDown size={16} className="text-[var(--gray-11)]" aria-hidden="true" />
+                  <Text as="div" size="1" color="gray">
+                    {t('listings_sort')}
+                  </Text>
+                </Flex>
+                <Select value={params.ordering} onChange={(e) => setParam('ordering', e.target.value)}>
+                  <option value="">{t('listings_sort')}</option>
+                  <option value="-created_at">{t('sort_newest')}</option>
+                  <option value="created_at">{t('sort_oldest')}</option>
+                  <option value="price">{t('sort_price_low')}</option>
+                  <option value="-price">{t('sort_price_high')}</option>
+                </Select>
+              </Box>
 
-            <Select
-              value={params.category}
-              onChange={(e) => setParam('category', e.target.value)}
-            >
-              <option value="">{t('listings_category')}</option>
-              {cats.map((c) => (
-                <option key={c.id} value={String(c.id)}>
-                  {c.name_ar || c.name_en}
-                </option>
-              ))}
-            </Select>
+              <Box style={{ gridColumn: 'span 2 / span 2' }}>
+                <Flex align="center" gap="2" mb="2">
+                  <Shapes size={16} className="text-[var(--gray-11)]" aria-hidden="true" />
+                  <Text as="div" size="1" color="gray">
+                    {t('listings_category')}
+                  </Text>
+                </Flex>
+                <CategoryFilterPicker
+                  categories={cats}
+                  value={params.category}
+                  onChange={(v) => setParam('category', v)}
+                  locale={locale}
+                  t={t}
+                />
+              </Box>
+            </Grid>
 
-            <Select
-              value={params.governorate}
-              onChange={(e) => {
-                setParam('governorate', e.target.value);
-                setParam('city', '');
-                setParam('neighborhood', '');
-              }}
-            >
-              <option value="">{t('listings_governorate')}</option>
-              {govs.map((g) => (
-                <option key={g.id} value={String(g.id)}>
-                  {g.name_ar || g.name_en}
-                </option>
-              ))}
-            </Select>
+            <Grid gap="3" columns={{ initial: '1', sm: '2', md: '6' }} align="end">
+              <Box style={{ gridColumn: 'span 2 / span 2' }}>
+                <Flex align="center" gap="2" mb="2">
+                  <MapPin size={16} className="text-[var(--gray-11)]" aria-hidden="true" />
+                  <Text as="div" size="1" color="gray">
+                    {t('listings_governorate')}
+                  </Text>
+                </Flex>
+                <Select
+                  value={params.governorate}
+                  onChange={(e) => {
+                    setParam('governorate', e.target.value);
+                    setParam('city', '');
+                    setParam('neighborhood', '');
+                  }}
+                >
+                  <option value="">{t('listings_governorate')}</option>
+                  {govs.map((g) => (
+                    <option key={g.id} value={String(g.id)}>
+                      {g.name_ar || g.name_en}
+                    </option>
+                  ))}
+                </Select>
+              </Box>
 
-            <Select
-              value={params.city}
-              onChange={(e) => {
-                setParam('city', e.target.value);
-                setParam('neighborhood', '');
-              }}
-              disabled={!params.governorate}
-            >
-              <option value="">{t('listings_city')}</option>
-              {cities.map((c) => (
-                <option key={c.id} value={String(c.id)}>
-                  {c.name_ar || c.name_en}
-                </option>
-              ))}
-            </Select>
+              <Box style={{ gridColumn: 'span 2 / span 2' }}>
+                <Flex align="center" gap="2" mb="2">
+                  <MapPin size={16} className="text-[var(--gray-11)]" aria-hidden="true" />
+                  <Text as="div" size="1" color="gray">
+                    {t('listings_city')}
+                  </Text>
+                </Flex>
+                <Select
+                  value={params.city}
+                  onChange={(e) => {
+                    setParam('city', e.target.value);
+                    setParam('neighborhood', '');
+                  }}
+                  disabled={!params.governorate}
+                >
+                  <option value="">{t('listings_city')}</option>
+                  {cities.map((c) => (
+                    <option key={c.id} value={String(c.id)}>
+                      {c.name_ar || c.name_en}
+                    </option>
+                  ))}
+                </Select>
+              </Box>
 
-            <Select
-              value={params.neighborhood}
-              onChange={(e) => setParam('neighborhood', e.target.value)}
-              disabled={!params.city}
-            >
-              <option value="">{t('listings_neighborhood')}</option>
-              {neighborhoods.map((n) => (
-                <option key={n.id} value={String(n.id)}>
-                  {n.name_ar || n.name_en}
-                </option>
-              ))}
-            </Select>
-          </Grid>
+              <Box style={{ gridColumn: 'span 2 / span 2' }}>
+                <Flex align="center" gap="2" mb="2">
+                  <MapPin size={16} className="text-[var(--gray-11)]" aria-hidden="true" />
+                  <Text as="div" size="1" color="gray">
+                    {t('listings_neighborhood')}
+                  </Text>
+                </Flex>
+                <Select
+                  value={params.neighborhood}
+                  onChange={(e) => setParam('neighborhood', e.target.value)}
+                  disabled={!params.city}
+                >
+                  <option value="">{t('listings_neighborhood')}</option>
+                  {neighborhoods.map((n) => (
+                    <option key={n.id} value={String(n.id)}>
+                      {n.name_ar || n.name_en}
+                    </option>
+                  ))}
+                </Select>
+              </Box>
+            </Grid>
+          </Flex>
         </CardHeader>
 
         <CardBody>
@@ -441,10 +500,10 @@ export function ListingsPage() {
             <InlineError error={error instanceof ApiError ? error : error} onRetry={() => setReloadNonce((n) => n + 1)} />
 
             {loading ? (
-              <Flex direction="column" gap="3">
+              <Flex direction="column" gap="3" className="bb-stagger">
                 {Array.from({ length: 6 }).map((_, i) => (
                   <Card key={i}>
-                    <Box p={{ initial: '5', sm: '6' }}>
+                    <Box p={{ initial: '2', sm: '3' }}>
                       <Flex justify="between" gap="4" align="start" wrap="wrap">
                         <Flex gap="3" align="start" style={{ minWidth: 0, flex: 1 }}>
                           <Skeleton className="h-16 w-16 shrink-0 sm:h-20 sm:w-20" />
@@ -464,29 +523,22 @@ export function ListingsPage() {
                 ))}
               </Flex>
             ) : (
-              <Flex direction="column" gap="5">
+              <Flex direction="column" gap="4" className="bb-stagger">
                 {results.map((r) => (
               <RTLink key={r.id} asChild underline="none" highContrast>
                 <Link to={`/listings/${r.id}`}>
                   <Card className="transition-colors hover:bg-[var(--gray-a2)]">
-                    <Box p={{ initial: '5', sm: '6' }}>
+                    <Box p={{ initial: '2', sm: '3' }}>
                       <Flex justify="between" gap="4" align="start" wrap="wrap">
                         <Flex gap="3" align="start" style={{ minWidth: 0, flex: 1 }}>
-                          {r.thumbnail ? (
-                            <button
-                              type="button"
-                              className="h-24 w-24 shrink-0 overflow-hidden rounded-lg border border-[var(--gray-a6)] bg-[var(--color-panel-solid)] sm:h-28 sm:w-28"
-                              onClick={(e) => openImagePreview({ src: r.thumbnail, title: r.title }, e)}
-                              aria-label={t('open_image_preview')}
-                            >
-                              <img
-                                src={r.thumbnail}
-                                alt={r.title || ''}
-                                className="h-full w-full object-cover"
-                                loading="lazy"
-                              />
-                            </button>
-                          ) : null}
+                          <ListingThumbnail
+                            src={r.thumbnail}
+                            alt={r.title || ''}
+                            className="h-24 w-24 rounded-lg border-[var(--gray-a6)] sm:h-28 sm:w-28"
+                            placeholder={t('detail_noImages')}
+                            ariaLabel={r.thumbnail ? t('open_image_preview') : t('detail_noImages')}
+                            onClick={r.thumbnail ? (e) => openImagePreview({ src: r.thumbnail, title: r.title }, e) : undefined}
+                          />
 
                           <Flex direction="column" gap="2" style={{ minWidth: 0 }}>
                             <Text weight="bold" size="3" style={{ wordBreak: 'break-word' }}>
@@ -505,8 +557,15 @@ export function ListingsPage() {
 
                         <Flex direction="column" gap="2" align="end">
                           <Flex align="center" gap="2" justify="end">
-                            <Button size="sm" variant="secondary" onClick={(e) => toggleWatchCard(r, e)}>
-                              {watchedIds.has(Number(r.id)) ? t('watch_remove') : t('watch_add')}
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="px-2"
+                              onClick={(e) => toggleWatchCard(r, e)}
+                              title={watchedIds.has(Number(r.id)) ? t('watch_remove') : t('watch_add')}
+                              aria-label={watchedIds.has(Number(r.id)) ? t('watch_remove') : t('watch_add')}
+                            >
+                              <Icon icon={watchedIds.has(Number(r.id)) ? EyeOff : Eye} size={16} />
                             </Button>
                             <FavoriteButton listingId={r.id} />
                           </Flex>

@@ -58,7 +58,7 @@ export function MyReportsPage() {
   }
 
   return (
-    <Flex direction="column" gap="5">
+    <Flex direction="column" gap="4">
       <Flex align="center" justify="between" gap="3" wrap="wrap">
         <Heading size="5">{t('my_reports_title')}</Heading>
         <Link to="/listings" style={{ textDecoration: 'none' }}>
@@ -109,7 +109,7 @@ export function MyReportsPage() {
               {results.map((r) => (
                 <div
                   key={r.id}
-                  className="rounded-lg border border-[var(--gray-a5)] bg-[var(--color-panel-solid)] p-4"
+                  className="rounded-lg border border-[var(--gray-a5)] bg-[var(--color-panel-solid)] p-2"
                 >
                   <Flex align="start" justify="between" gap="3" wrap="wrap">
                     <div style={{ minWidth: 0 }}>

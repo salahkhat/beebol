@@ -101,6 +101,7 @@ class AdminSeedView(APIView):
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
+    pagination_class = None
 
 
 class GovernorateViewSet(viewsets.ReadOnlyModelViewSet):
@@ -236,7 +237,32 @@ class ListingViewSet(viewsets.ModelViewSet):
         if qp.get("seller"):
             qs = qs.filter(seller_id=qp.get("seller"))
         if qp.get("category"):
-            qs = qs.filter(category_id=qp.get("category"))
+            raw = str(qp.get("category") or "").strip()
+            try:
+                root_id = int(raw)
+            except Exception:
+                root_id = None
+
+            if root_id is not None:
+                # Treat category as a subtree filter (selected category + all descendants).
+                ids: list[int] = [root_id]
+                frontier: list[int] = [root_id]
+                seen: set[int] = {root_id}
+
+                # Depth is expected to be small; this keeps queries bounded.
+                while frontier:
+                    child_ids = list(
+                        Category.objects.filter(parent_id__in=frontier).values_list("id", flat=True)
+                    )
+                    frontier = []
+                    for cid in child_ids:
+                        if cid in seen:
+                            continue
+                        seen.add(cid)
+                        ids.append(cid)
+                        frontier.append(cid)
+
+                qs = qs.filter(category_id__in=ids)
         if qp.get("governorate"):
             qs = qs.filter(governorate_id=qp.get("governorate"))
         if qp.get("city"):
