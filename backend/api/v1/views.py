@@ -276,9 +276,9 @@ class ListingViewSet(viewsets.ModelViewSet):
         )
         page = self.paginate_queryset(qs)
         if page is not None:
-            serializer = ListingListSerializer(page, many=True)
+            serializer = ListingListSerializer(page, many=True, context={"request": request})
             return self.get_paginated_response(serializer.data)
-        return Response(ListingListSerializer(qs, many=True).data)
+        return Response(ListingListSerializer(qs, many=True, context={"request": request}).data)
 
     @action(detail=False, methods=["post"], url_path="bulk_update", permission_classes=[IsAuthenticated])
     def bulk_update(self, request):

@@ -108,6 +108,36 @@ export function CreateListingPage() {
     };
   }, []);
 
+  function isMeaningfulDraft(d) {
+    if (!d || typeof d !== 'object') return false;
+    const titleHas = String(d.title || '').trim().length > 0;
+    const descHas = String(d.description || '').trim().length > 0;
+    const priceHas = String(d.price ?? '').trim().length > 0;
+    const categoryHas = String(d.category || '').trim().length > 0;
+    const govHas = String(d.governorate || '').trim().length > 0;
+    const cityHas = String(d.city || '').trim().length > 0;
+    const neighborhoodHas = String(d.neighborhood || '').trim().length > 0;
+    const stepHas = Number(d.step) > 0;
+    const photosHas = Number(d.photosCount) > 0;
+
+    const statusHas = d.status && d.status !== 'published';
+    const currencyHas = d.currency && d.currency !== 'SYP';
+
+    return (
+      titleHas ||
+      descHas ||
+      priceHas ||
+      categoryHas ||
+      govHas ||
+      cityHas ||
+      neighborhoodHas ||
+      stepHas ||
+      photosHas ||
+      statusHas ||
+      currencyHas
+    );
+  }
+
   function readDraft() {
     try {
       const raw = localStorage.getItem(draftKey);
@@ -115,6 +145,14 @@ export function CreateListingPage() {
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== 'object') return null;
       if (parsed.v !== 1) return null;
+      if (!isMeaningfulDraft(parsed)) {
+        try {
+          localStorage.removeItem(draftKey);
+        } catch {
+          // ignore
+        }
+        return null;
+      }
       return parsed;
     } catch {
       return null;
@@ -268,7 +306,12 @@ export function CreateListingPage() {
   }
 
   function saveDraftSilent() {
-    writeDraft(buildDraftPayload());
+    const payload = buildDraftPayload();
+    if (!isMeaningfulDraft(payload)) {
+      clearDraft();
+      return;
+    }
+    writeDraft(payload);
   }
 
   function goNext() {
