@@ -34,6 +34,7 @@ import { useToast } from '../ui/Toast';
 import { useI18n } from '../i18n/i18n';
 import { useAuth } from '../auth/AuthContext';
 import { CategoryCascadeSelect } from '../components/CategoryCascadeSelect';
+import { formatAttributeValue, getAttributeChoiceLabel } from '../lib/attributeFormat';
 import { buildCategoryIndex } from '../lib/categoryTree';
 
 export function CreateListingPage() {
@@ -81,6 +82,9 @@ export function CreateListingPage() {
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [showRequiredHints, setShowRequiredHints] = useState(false);
+
+  const [attrDefs, setAttrDefs] = useState([]);
+  const [attributes, setAttributes] = useState({});
 
   const draftKey = useMemo(() => {
     const uid = auth?.user?.id ? String(auth.user.id) : 'anon';
@@ -198,6 +202,8 @@ export function CreateListingPage() {
     setCity(d.city || '');
     setNeighborhood(d.neighborhood || '');
 
+    setAttributes(d.attributes && typeof d.attributes === 'object' ? d.attributes : {});
+
     setStep(Number.isFinite(Number(d.step)) ? Math.max(0, Math.min(STEPS.length - 1, Number(d.step))) : 0);
 
     setDraftRestoredPhotoCount(Number(d.photosCount) > 0 ? Number(d.photosCount) : 0);
@@ -260,9 +266,59 @@ export function CreateListingPage() {
     };
   }, [city]);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function loadAttrDefs() {
+      if (!category) {
+        setAttrDefs([]);
+        setAttributes({});
+        return;
+      }
+      const defs = await api.categoryAttributes(category);
+      if (cancelled) return;
+      const safeDefs = Array.isArray(defs) ? defs : [];
+      setAttrDefs(safeDefs);
+      setAttributes((prev) => {
+        if (!prev || typeof prev !== 'object') return {};
+        const next = {};
+        for (const d of safeDefs) {
+          const k = String(d?.key || '');
+          if (!k) continue;
+          if (prev[k] == null) continue;
+          next[k] = prev[k];
+        }
+        return next;
+      });
+    }
+    loadAttrDefs().catch(() => {
+      setAttrDefs([]);
+      setAttributes({});
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [category]);
+
   async function createAndUpload() {
     setBusy(true);
     try {
+      if (status !== 'draft') {
+        const missing = (attrDefs || [])
+          .filter((d) => d && d.is_required_in_post)
+          .map((d) => String(d.key || ''))
+          .filter((k) => k && (attributes[k] == null || String(attributes[k]).trim() === ''));
+        if (missing.length > 0) {
+          toast.push({
+            title: t('create_title'),
+            description: `Missing required fields: ${missing.join(', ')}`,
+            variant: 'error',
+          });
+          setStep(0);
+          setShowRequiredHints(true);
+          return;
+        }
+      }
+
       const payload = {
         title,
         description,
@@ -273,6 +329,7 @@ export function CreateListingPage() {
         governorate: Number(governorate),
         city: Number(city),
         neighborhood: neighborhood ? Number(neighborhood) : null,
+        attributes,
       };
       const created = await api.createListing(payload);
 
@@ -337,6 +394,15 @@ export function CreateListingPage() {
 
   const catIdx = useMemo(() => buildCategoryIndex(cats), [cats]);
   const categoryLeafOk = category ? catIdx.isLeaf(String(category)) : false;
+
+  function attrLabel(d) {
+    if (!d) return '';
+    const ar = String(d.label_ar || '').trim();
+    const en = String(d.label_en || '').trim();
+    const key = String(d.key || '').trim();
+    if (String(locale || '').startsWith('ar')) return ar || en || key;
+    return en || ar || key;
+  }
 
   const canGoBasic = title.trim().length > 0 && category && categoryLeafOk;
   const canGoPricing = currency && priceOk;
@@ -441,6 +507,7 @@ export function CreateListingPage() {
       governorate,
       city,
       neighborhood,
+      attributes,
       photosCount: photos.length,
     };
   }
@@ -565,6 +632,60 @@ export function CreateListingPage() {
                 </Text>
               ) : null}
             </div>
+
+            {category && Array.isArray(attrDefs) && attrDefs.length > 0 ? (
+              <div className="pt-px">
+                <Grid gap="3" columns={{ initial: '1', sm: '2' }}>
+                  {attrDefs.map((d) => {
+                    const key = String(d?.key || '');
+                    if (!key) return null;
+                    const label = attrLabel(d);
+                    const val = attributes?.[key] == null ? '' : String(attributes[key]);
+                    const requiredNow = status !== 'draft' && !!d?.is_required_in_post;
+
+                    const onChange = (nextVal) => {
+                      setAttributes((prev) => ({
+                        ...(prev && typeof prev === 'object' ? prev : {}),
+                        [key]: nextVal,
+                      }));
+                    };
+
+                    return (
+                      <div key={key} className="pt-px">
+                        <Text as="div" size="2" color="gray" mb="2">
+                          {label}{d?.unit ? ` (${String(d.unit)})` : ''}
+                        </Text>
+
+                        {d?.type === 'enum' && Array.isArray(d?.choices) ? (
+                          <Select value={val} onChange={(e) => onChange(e.target.value)} onBlur={saveDraftSilent}>
+                            <option value="">{t('select_placeholder')}</option>
+                            {d.choices.map((c) => (
+                              <option key={String(c)} value={String(c)}>
+                                {getAttributeChoiceLabel(d, c, t) || String(c)}
+                              </option>
+                            ))}
+                          </Select>
+                        ) : d?.type === 'bool' ? (
+                          <Select value={val} onChange={(e) => onChange(e.target.value)} onBlur={saveDraftSilent}>
+                            <option value="">{t('select_placeholder')}</option>
+                            <option value="true">{formatAttributeValue(d, true, t)}</option>
+                            <option value="false">{formatAttributeValue(d, false, t)}</option>
+                          </Select>
+                        ) : (
+                          <Input value={val} onChange={(e) => onChange(e.target.value)} onBlur={saveDraftSilent} />
+                        )}
+
+                        {showRequiredHints && requiredNow && !String(val || '').trim() ? (
+                          <Text size="1" color="red" mt="1" as="div">
+                            {t('required')}
+                          </Text>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </Grid>
+              </div>
+            ) : null}
           </div>
         ) : null}
 

@@ -1,6 +1,7 @@
 import { ImageOff } from 'lucide-react';
 import { cn } from './cn';
 import { Icon } from './Icon';
+import { normalizeMediaUrl } from '../lib/mediaUrl';
 
 export function ListingThumbnail({
   src,
@@ -12,14 +13,15 @@ export function ListingThumbnail({
   imgClassName,
   loading = 'lazy',
 }) {
+  const normalizedSrc = normalizeMediaUrl(src);
   const containerClassName = cn(
     'shrink-0 overflow-hidden rounded-md border border-[var(--gray-a5)] bg-[var(--color-panel-solid)]',
     className,
   );
 
-  const content = src ? (
+  const content = normalizedSrc ? (
     <img
-      src={src}
+      src={normalizedSrc}
       alt={alt}
       className={cn('h-full w-full object-cover', imgClassName)}
       loading={loading}
@@ -31,7 +33,7 @@ export function ListingThumbnail({
     </div>
   );
 
-  if (src && onClick) {
+  if (normalizedSrc && onClick) {
     return (
       <button type="button" className={containerClassName} onClick={onClick} aria-label={ariaLabel}>
         {content}
@@ -42,8 +44,8 @@ export function ListingThumbnail({
   return (
     <div
       className={containerClassName}
-      role={src ? undefined : 'img'}
-      aria-label={src ? undefined : ariaLabel || placeholder}
+      role={normalizedSrc ? undefined : 'img'}
+      aria-label={normalizedSrc ? undefined : ariaLabel || placeholder}
     >
       {content}
     </div>

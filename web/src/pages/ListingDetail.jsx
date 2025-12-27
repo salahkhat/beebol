@@ -22,6 +22,8 @@ import { pushRecentlyViewed } from '../lib/recentlyViewed';
 import { addCompareId, formatIdsParam } from '../lib/compare';
 import { addWatch, isWatched, removeWatch, updateWatchSnapshotFromListing } from '../lib/watchlist';
 import { followSeller, isFollowingSeller, unfollowSeller } from '../lib/following';
+import { normalizeMediaUrl } from '../lib/mediaUrl';
+import { formatAttributeValue } from '../lib/attributeFormat';
 
 function moderationBadgeVariant(m) {
   if (m === 'approved') return 'ok';
@@ -35,12 +37,14 @@ export function ListingDetailPage() {
   const nav = useNavigate();
   const { isAuthenticated, user } = useAuth();
   const toast = useToast();
-  const { t, dir } = useI18n();
+  const { t, dir, locale } = useI18n();
 
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [reloadNonce, setReloadNonce] = useState(0);
+
+  const [attrDefs, setAttrDefs] = useState([]);
 
   const [images, setImages] = useState([]);
   const [savingOrder, setSavingOrder] = useState(false);
@@ -178,6 +182,83 @@ export function ListingDetailPage() {
       cancelled = true;
     };
   }, [id, isAuthenticated, reloadNonce]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadAttrDefs() {
+      const categoryId = data?.category?.id;
+      if (!categoryId) {
+        setAttrDefs([]);
+        return;
+      }
+      const defs = await api.categoryAttributes(categoryId);
+      if (cancelled) return;
+      setAttrDefs(Array.isArray(defs) ? defs : []);
+    }
+
+    loadAttrDefs().catch(() => {
+      setAttrDefs([]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [data?.category?.id]);
+
+  function attrLabel(d) {
+    if (!d) return '';
+    const ar = String(d.label_ar || '').trim();
+    const en = String(d.label_en || '').trim();
+    const key = String(d.key || '').trim();
+    if (String(locale || '').startsWith('ar')) return ar || en || key;
+    return en || ar || key;
+  }
+
+  const attributeRows = useMemo(() => {
+    const attrs = data?.attributes;
+    if (!attrs || typeof attrs !== 'object') return [];
+
+    const normalizeValue = (v) => {
+      if (v == null) return '';
+      return String(v);
+    };
+
+    const isMeaningful = (v) => {
+      if (v == null) return false;
+      if (typeof v === 'string') return v.trim().length > 0;
+      return true;
+    };
+
+    const out = [];
+    const seen = new Set();
+
+    if (Array.isArray(attrDefs) && attrDefs.length > 0) {
+      for (const d of attrDefs) {
+        const key = String(d?.key || '');
+        if (!key) continue;
+        if (!(key in attrs)) continue;
+        const raw = attrs[key];
+        if (!isMeaningful(raw)) continue;
+        seen.add(key);
+        const unit = d?.unit ? String(d.unit) : '';
+        out.push({
+          key,
+          label: attrLabel(d),
+          value: formatAttributeValue(d, raw, t) || normalizeValue(raw),
+          unit,
+        });
+      }
+    }
+
+    // Fallback for unknown/unconfigured keys.
+    for (const [k, v] of Object.entries(attrs)) {
+      const key = String(k);
+      if (!key || seen.has(key)) continue;
+      if (!isMeaningful(v)) continue;
+      out.push({ key, label: key, value: normalizeValue(v), unit: '' });
+    }
+
+    return out;
+  }, [data?.attributes, attrDefs, locale]);
 
   useEffect(() => {
     // Initialize editable image order when the listing changes.
@@ -588,7 +669,7 @@ export function ListingDetailPage() {
                   <Flex direction="column" gap="3">
                     <div className="overflow-hidden rounded-lg border border-[var(--gray-a5)] bg-[var(--color-panel-solid)]">
                       <img
-                        src={focusedImage.image}
+                        src={normalizeMediaUrl(focusedImage.image)}
                         alt={focusedImage.alt_text || ''}
                         className="max-h-[70vh] w-full object-contain"
                       />
@@ -608,7 +689,7 @@ export function ListingDetailPage() {
                               onClick={() => setFocusedImageId(img.id)}
                               aria-label={img.alt_text || t('image_preview')}
                             >
-                              <img src={img.image} alt={img.alt_text || ''} className="h-full w-full object-cover" loading="lazy" />
+                              <img src={normalizeMediaUrl(img.image)} alt={img.alt_text || ''} className="h-full w-full object-cover" loading="lazy" />
                             </button>
                           );
                         })}
@@ -623,6 +704,29 @@ export function ListingDetailPage() {
                   <Text size="2">
                     {data.description ? data.description : <Text as="span" color="gray">{t('detail_noDescription')}</Text>}
                   </Text>
+
+                  {attributeRows.length > 0 ? (
+                    <div className="overflow-hidden rounded-lg border border-[var(--gray-a5)] bg-[var(--color-panel-solid)]">
+                      <div className="border-b border-[var(--gray-a5)] px-4 py-3">
+                        <Heading size="3">{t('detail_attributes')}</Heading>
+                      </div>
+                      <div className="px-4 py-3">
+                        <Grid columns={{ initial: '1', sm: '2' }} gap="2">
+                          {attributeRows.map((row) => (
+                            <Flex key={row.key} align="baseline" justify="between" gap="3">
+                              <Text size="2" color="gray">
+                                {row.label}
+                              </Text>
+                              <Text size="2">
+                                {row.value}
+                                {row.unit ? ` ${row.unit}` : ''}
+                              </Text>
+                            </Flex>
+                          ))}
+                        </Grid>
+                      </div>
+                    </div>
+                  ) : null}
 
                   <Grid gap="2">
                     <Flex align="center" gap="2" wrap="wrap">
@@ -707,7 +811,7 @@ export function ListingDetailPage() {
                         aria-label={t('open_image_preview')}
                       >
                         <img
-                          src={focusedImage.image}
+                          src={normalizeMediaUrl(focusedImage.image)}
                           alt={focusedImage.alt_text || ''}
                           className="h-72 w-full object-contain sm:h-96"
                           loading="lazy"
@@ -748,7 +852,7 @@ export function ListingDetailPage() {
                                 aria-label={img.alt_text || t('image_preview')}
                               >
                                 <img
-                                  src={img.image}
+                                  src={normalizeMediaUrl(img.image)}
                                   alt={img.alt_text || ''}
                                   className="h-full w-full object-cover"
                                   loading="lazy"

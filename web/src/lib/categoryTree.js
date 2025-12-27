@@ -63,6 +63,10 @@ export function buildCategoryIndex(categories) {
     const q = String(query || '').trim().toLowerCase();
     if (!q) return [];
 
+    // Search in both Arabic and English fields regardless of UI language.
+    // Results are still displayed in the current locale.
+    const altLocale = locale === 'ar' ? 'en' : 'ar';
+
     const results = [];
     for (const node of byId.values()) {
       const id = String(node.id);
@@ -72,13 +76,27 @@ export function buildCategoryIndex(categories) {
 
       const label = String(getLabel(node, locale) || '');
       const labelLc = label.toLowerCase();
+      const altLabel = String(getLabel(node, altLocale) || '');
+      const altLabelLc = altLabel.toLowerCase();
       const pathLabel = String(getPathLabel(id, locale) || '');
       const pathLc = pathLabel.toLowerCase();
+      const altPathLabel = String(getPathLabel(id, altLocale) || '');
+      const altPathLc = altPathLabel.toLowerCase();
+
+      const slug = String(node.slug || '');
+      const slugLc = slug.toLowerCase();
 
       let score = 0;
       if (labelLc.startsWith(q)) score += 100;
       if (labelLc.includes(q)) score += 50;
       if (pathLc.includes(q)) score += 10;
+
+      if (altLabelLc.startsWith(q)) score += 90;
+      if (altLabelLc.includes(q)) score += 45;
+      if (altPathLc.includes(q)) score += 8;
+
+      if (slugLc.startsWith(q)) score += 15;
+      if (slugLc.includes(q)) score += 5;
       if (!score) continue;
 
       results.push({ id, label, pathLabel, isLeaf: leaf, score });

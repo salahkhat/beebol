@@ -137,10 +137,6 @@
     background-color: var(--gray-a2);
   }
 
-  .bb-card:active {
-    transform: translateY(0);
-  }
-
   .bb-popover[data-state='open'] {
     animation: bb-scale-fade var(--bb-dur-fast) var(--bb-ease-out) both;
   }
@@ -165,6 +161,44 @@
 
   .bb-toast[data-state='closed'] {
     animation: bb-toast-out var(--bb-dur-fast) var(--bb-ease-out) both;
+  }
+
+  .bb-filter-panel {
+    border: 1px solid var(--gray-a4);
+    background: var(--gray-a2);
+    border-radius: 14px;
+    padding: 12px;
+  }
+
+  /* New filters layout (Listings). */
+  .bb-filters {
+    border: 1px solid var(--gray-a5);
+    background: var(--color-panel-solid);
+    border-radius: 18px;
+    padding: 14px;
+  }
+
+  .bb-filter-section {
+    padding: 10px;
+    border-radius: 14px;
+    background: var(--gray-a2);
+    border: 1px solid var(--gray-a4);
+  }
+
+  .bb-filter-section + .bb-filter-section {
+    margin-top: 12px;
+  }
+
+  /* Applied to Input/Select components in filter UIs (className on Input.Root / Select.Trigger). */
+  .bb-filter-control {
+    background-color: var(--color-panel-solid);
+    border: 1px solid var(--gray-a6);
+    border-radius: 14px;
+    min-height: 44px;
+  }
+
+  .bb-filter-control:hover {
+    border-color: var(--gray-a7);
   }
 }
 

@@ -177,6 +177,7 @@ export const api = {
 
   categories: () => apiFetchJson('api/v1/categories/', { auth: false }),
   categoriesAll: () => apiFetchAllPages('api/v1/categories/?page_size=500', { auth: false }),
+  categoryAttributes: (categoryId) => apiFetchJson(`api/v1/categories/${categoryId}/attributes/`, { auth: false }),
   governorates: () => apiFetchJson('api/v1/governorates/', { auth: false }),
   cities: ({ governorate } = {}) => apiFetchJson(`api/v1/cities/${toQuery({ governorate })}`, { auth: false }),
   neighborhoods: ({ city } = {}) => apiFetchJson(`api/v1/neighborhoods/${toQuery({ city })}`, { auth: false }),

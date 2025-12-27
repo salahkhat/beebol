@@ -4,15 +4,18 @@ from django.utils import timezone
 from decimal import Decimal, InvalidOperation
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from market.models import (
     Category,
+    CategoryAttributeDefinition,
     City,
     Governorate,
     Listing,
+    ListingAttributeValue,
     ListingImage,
     ModerationStatus,
     Neighborhood,
@@ -26,6 +29,7 @@ from market.seeding import is_admin_seeding_enabled, run_admin_seed
 from .permissions import IsOwnerOrReadOnly
 from .serializers import (
     CategorySerializer,
+    CategoryAttributeDefinitionSerializer,
     CitySerializer,
     CreateThreadSerializer,
     GovernorateSerializer,
@@ -102,6 +106,28 @@ class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
     pagination_class = None
+
+    @action(detail=True, methods=["get"], permission_classes=[AllowAny], url_path="attributes")
+    def attributes(self, request, pk=None):
+        category = self.get_object()
+
+        ancestor_ids = category.ancestor_ids_including_self()
+        if not ancestor_ids:
+            return Response([])
+
+        order = list(reversed(ancestor_ids))
+        pos = {cid: idx for idx, cid in enumerate(order)}
+
+        defs = list(CategoryAttributeDefinition.objects.filter(category_id__in=ancestor_ids))
+        defs.sort(key=lambda d: (pos.get(d.category_id, 10_000), d.sort_order, d.key))
+
+        by_key = {}
+        for d in defs:
+            by_key[d.key] = d
+
+        out = list(by_key.values())
+        out.sort(key=lambda d: (d.sort_order, d.key))
+        return Response(CategoryAttributeDefinitionSerializer(out, many=True).data)
 
 
 class GovernorateViewSet(viewsets.ReadOnlyModelViewSet):
@@ -209,6 +235,9 @@ class ListingViewSet(viewsets.ModelViewSet):
             "seller",
         ).prefetch_related("images")
 
+        if getattr(self, "action", None) == "retrieve":
+            qs = qs.prefetch_related("attribute_values", "attribute_values__definition")
+
         user = self.request.user
         public_visibility = Q(
             status=ListingStatus.PUBLISHED,
@@ -225,6 +254,8 @@ class ListingViewSet(viewsets.ModelViewSet):
 
         # Basic filters
         qp = self.request.query_params
+
+        selected_category_obj = None
 
         # Removed listings are hidden by default. Staff can opt-in via include_removed=1.
         include_removed = str(qp.get("include_removed") or "").lower() in {"1", "true", "yes"}
@@ -244,6 +275,7 @@ class ListingViewSet(viewsets.ModelViewSet):
                 root_id = None
 
             if root_id is not None:
+                selected_category_obj = Category.objects.filter(id=root_id).first()
                 # Treat category as a subtree filter (selected category + all descendants).
                 ids: list[int] = [root_id]
                 frontier: list[int] = [root_id]
@@ -270,6 +302,29 @@ class ListingViewSet(viewsets.ModelViewSet):
         if qp.get("neighborhood"):
             qs = qs.filter(neighborhood_id=qp.get("neighborhood"))
 
+        # Price range filters
+        # Supports both price_min/price_max and price__gte/price__lte.
+        raw_price_min = (qp.get("price_min") if qp.get("price_min") is not None else qp.get("price__gte"))
+        raw_price_max = (qp.get("price_max") if qp.get("price_max") is not None else qp.get("price__lte"))
+
+        if raw_price_min is not None and str(raw_price_min).strip() != "":
+            try:
+                price_min = Decimal(str(raw_price_min).strip())
+            except (InvalidOperation, ValueError):
+                raise ValidationError({"detail": "Invalid decimal for price_min"})
+            if price_min < 0:
+                raise ValidationError({"detail": "price_min cannot be negative"})
+            qs = qs.filter(price__gte=price_min)
+
+        if raw_price_max is not None and str(raw_price_max).strip() != "":
+            try:
+                price_max = Decimal(str(raw_price_max).strip())
+            except (InvalidOperation, ValueError):
+                raise ValidationError({"detail": "Invalid decimal for price_max"})
+            if price_max < 0:
+                raise ValidationError({"detail": "price_max cannot be negative"})
+            qs = qs.filter(price__lte=price_max)
+
         if qp.get("is_flagged") is not None:
             raw = str(qp.get("is_flagged") or "").lower()
             if raw in {"1", "true", "yes"}:
@@ -284,6 +339,112 @@ class ListingViewSet(viewsets.ModelViewSet):
                 qs = qs.filter(is_removed=True)
             elif raw in {"0", "false", "no"}:
                 qs = qs.filter(is_removed=False)
+
+        # Attribute filters: query params starting with attr_
+        attr_params = [(k, v) for k, v in qp.items() if str(k).startswith("attr_")]
+        if attr_params:
+            if selected_category_obj is None:
+                raise ValidationError({"detail": "attr_* filters require category to be set"})
+
+            ancestor_ids = selected_category_obj.ancestor_ids_including_self()
+            order = list(reversed(ancestor_ids))
+            pos = {cid: idx for idx, cid in enumerate(order)}
+            defs = list(CategoryAttributeDefinition.objects.filter(category_id__in=ancestor_ids))
+            defs.sort(key=lambda d: (pos.get(d.category_id, 10_000), d.sort_order, d.key))
+            defs_by_key = {}
+            for d in defs:
+                defs_by_key[d.key] = d
+
+            def parse_bool(s: str) -> bool:
+                ss = str(s).strip().lower()
+                if ss in {"1", "true", "yes", "y", "on"}:
+                    return True
+                if ss in {"0", "false", "no", "n", "off"}:
+                    return False
+                raise ValidationError({"detail": "Invalid boolean value"})
+
+            for idx, (raw_key, raw_val) in enumerate(attr_params):
+                name = str(raw_key)
+                raw_val = str(raw_val)
+                base = name[len("attr_") :]
+                if "__" in base:
+                    key, op = base.split("__", 1)
+                else:
+                    key, op = base, "eq"
+
+                d = defs_by_key.get(key)
+                if not d:
+                    raise ValidationError({"detail": f"Unknown attribute filter: {key}"})
+                if not d.is_filterable:
+                    raise ValidationError({"detail": f"Attribute is not filterable: {key}"})
+
+                value_qs = ListingAttributeValue.objects.filter(listing_id=OuterRef("pk"), definition=d)
+
+                if d.type == "int":
+                    try:
+                        num = int(raw_val)
+                    except Exception:
+                        raise ValidationError({"detail": f"Invalid integer for {key}"})
+                    if op == "eq":
+                        value_qs = value_qs.filter(int_value=num)
+                    elif op == "gte":
+                        value_qs = value_qs.filter(int_value__gte=num)
+                    elif op == "lte":
+                        value_qs = value_qs.filter(int_value__lte=num)
+                    elif op == "gt":
+                        value_qs = value_qs.filter(int_value__gt=num)
+                    elif op == "lt":
+                        value_qs = value_qs.filter(int_value__lt=num)
+                    else:
+                        raise ValidationError({"detail": f"Unsupported operator for {key}: {op}"})
+
+                elif d.type == "decimal":
+                    try:
+                        num = Decimal(raw_val)
+                    except Exception:
+                        raise ValidationError({"detail": f"Invalid decimal for {key}"})
+                    if op == "eq":
+                        value_qs = value_qs.filter(decimal_value=num)
+                    elif op == "gte":
+                        value_qs = value_qs.filter(decimal_value__gte=num)
+                    elif op == "lte":
+                        value_qs = value_qs.filter(decimal_value__lte=num)
+                    elif op == "gt":
+                        value_qs = value_qs.filter(decimal_value__gt=num)
+                    elif op == "lt":
+                        value_qs = value_qs.filter(decimal_value__lt=num)
+                    else:
+                        raise ValidationError({"detail": f"Unsupported operator for {key}: {op}"})
+
+                elif d.type == "bool":
+                    if op != "eq":
+                        raise ValidationError({"detail": f"Unsupported operator for {key}: {op}"})
+                    value_qs = value_qs.filter(bool_value=parse_bool(raw_val))
+
+                elif d.type == "enum":
+                    if op == "eq":
+                        value_qs = value_qs.filter(enum_value=str(raw_val))
+                    elif op == "in":
+                        items = [x.strip() for x in str(raw_val).split(",") if x.strip()]
+                        if not items:
+                            raise ValidationError({"detail": f"Invalid list for {key}"})
+                        value_qs = value_qs.filter(enum_value__in=items)
+                    else:
+                        raise ValidationError({"detail": f"Unsupported operator for {key}: {op}"})
+
+                elif d.type == "text":
+                    if op == "eq":
+                        value_qs = value_qs.filter(text_value=str(raw_val))
+                    elif op == "icontains":
+                        value_qs = value_qs.filter(text_value__icontains=str(raw_val))
+                    else:
+                        raise ValidationError({"detail": f"Unsupported operator for {key}: {op}"})
+                else:
+                    raise ValidationError({"detail": f"Unsupported attribute type for {key}"})
+
+                qs = qs.annotate(**{f"_has_attr_{idx}": Subquery(value_qs.values("id")[:1])}).filter(
+                    **{f"_has_attr_{idx}__isnull": False}
+                )
 
         return qs
 

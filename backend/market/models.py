@@ -40,6 +40,18 @@ class Category(TimestampedModel):
     def __str__(self) -> str:
         return self.name_ar
 
+    def ancestor_ids_including_self(self) -> list[int]:
+        out: list[int] = []
+        cur: Category | None = self
+        seen: set[int] = set()
+        while cur is not None and cur.id is not None:
+            if cur.id in seen:
+                break
+            seen.add(cur.id)
+            out.append(cur.id)
+            cur = cur.parent
+        return out
+
 
 class Governorate(TimestampedModel):
     name_ar = models.CharField(max_length=120, unique=True)
@@ -181,3 +193,93 @@ class ListingImage(TimestampedModel):
 
     def __str__(self) -> str:
         return f"ListingImage({self.listing_id})"
+
+
+class CategoryAttributeType(models.TextChoices):
+    INT = "int", "Integer"
+    DECIMAL = "decimal", "Decimal"
+    TEXT = "text", "Text"
+    BOOL = "bool", "Boolean"
+    ENUM = "enum", "Enum"
+
+
+class CategoryAttributeDefinition(TimestampedModel):
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="attribute_definitions")
+
+    # Stable identifier used in API and query params (e.g. bedrooms, area_m2, ram_gb)
+    key = models.SlugField(max_length=64)
+
+    label_ar = models.CharField(max_length=120)
+    label_en = models.CharField(max_length=120, blank=True)
+
+    type = models.CharField(max_length=16, choices=CategoryAttributeType.choices)
+    unit = models.CharField(max_length=24, blank=True)
+
+    # Only relevant for ENUM
+    choices = models.JSONField(null=True, blank=True)
+
+    is_required_in_post = models.BooleanField(default=False)
+    is_filterable = models.BooleanField(default=True)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["category", "key"], name="uq_cat_attrdef_category_key"),
+        ]
+        indexes = [
+            models.Index(fields=["category", "key"]),
+        ]
+        ordering = ["category_id", "sort_order", "key"]
+
+    def clean(self):
+        if self.type == CategoryAttributeType.ENUM:
+            if self.choices is None:
+                raise ValidationError({"choices": "choices is required for enum attributes"})
+            if not isinstance(self.choices, list) or not all(isinstance(x, str) and x.strip() for x in self.choices):
+                raise ValidationError({"choices": "choices must be a non-empty list of strings"})
+        else:
+            if self.choices not in (None, [], {}):
+                raise ValidationError({"choices": "choices is only allowed for enum attributes"})
+
+    def __str__(self) -> str:
+        return f"{self.category_id}:{self.key}"
+
+
+class ListingAttributeValue(TimestampedModel):
+    listing = models.ForeignKey(Listing, on_delete=models.CASCADE, related_name="attribute_values")
+    definition = models.ForeignKey(
+        CategoryAttributeDefinition,
+        on_delete=models.CASCADE,
+        related_name="values",
+    )
+
+    int_value = models.IntegerField(null=True, blank=True)
+    decimal_value = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
+    text_value = models.TextField(null=True, blank=True)
+    bool_value = models.BooleanField(null=True, blank=True)
+    enum_value = models.CharField(max_length=120, null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["listing", "definition"], name="uq_listing_attrvalue_listing_def"),
+        ]
+        indexes = [
+            models.Index(fields=["definition", "int_value"]),
+            models.Index(fields=["definition", "decimal_value"]),
+            models.Index(fields=["definition", "enum_value"]),
+        ]
+
+    def clean(self):
+        # Ensure at most one typed value is set.
+        vals = [
+            self.int_value is not None,
+            self.decimal_value is not None,
+            self.text_value not in (None, ""),
+            self.bool_value is not None,
+            self.enum_value not in (None, ""),
+        ]
+        if sum(1 for v in vals if v) > 1:
+            raise ValidationError("Only one value field can be set")
+
+    def __str__(self) -> str:
+        return f"ListingAttributeValue({self.listing_id},{self.definition_id})"

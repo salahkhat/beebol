@@ -1,6 +1,15 @@
 from django.contrib import admin
 
-from .models import Category, City, Governorate, Listing, ListingImage, Neighborhood
+from .models import (
+    Category,
+    CategoryAttributeDefinition,
+    City,
+    Governorate,
+    Listing,
+    ListingAttributeValue,
+    ListingImage,
+    Neighborhood,
+)
 
 
 @admin.register(Category)
@@ -84,3 +93,25 @@ class ListingAdmin(admin.ModelAdmin):
     @admin.action(description="Unflag selected listings")
     def unflag(self, request, queryset):
         queryset.update(is_flagged=False)
+
+
+@admin.register(CategoryAttributeDefinition)
+class CategoryAttributeDefinitionAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "category",
+        "key",
+        "type",
+        "is_required_in_post",
+        "is_filterable",
+        "sort_order",
+    )
+    list_filter = ("type", "is_required_in_post", "is_filterable", "category")
+    search_fields = ("key", "label_ar", "label_en")
+
+
+@admin.register(ListingAttributeValue)
+class ListingAttributeValueAdmin(admin.ModelAdmin):
+    list_display = ("id", "listing", "definition", "int_value", "decimal_value", "enum_value", "bool_value")
+    list_filter = ("definition",)
+    search_fields = ("definition__key", "enum_value", "text_value")

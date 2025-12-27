@@ -26,9 +26,12 @@ export function CategoryCascadeSelect({
   t,
   required = false,
   leafOnly = false,
+  deferChangeUntilLeaf = false,
   onBlur,
+  controlClassName = '',
   showSearch = true,
   showBrowse = true,
+  showQuickPicks = true,
 }) {
   const idx = useMemo(() => buildCategoryIndex(categories || []), [categories]);
 
@@ -72,7 +75,7 @@ export function CategoryCascadeSelect({
 
     if (leafOnly && !idx.isLeaf(chosen)) {
       // Keep the selection in UI but don't promote it as the final value.
-      onChange?.('');
+      if (!deferChangeUntilLeaf) onChange?.('');
       return;
     }
 
@@ -139,7 +142,7 @@ export function CategoryCascadeSelect({
 
   return (
     <div>
-      {showBrowse && path.length === 0 && roots.length ? (
+      {showBrowse && showQuickPicks && path.length === 0 && roots.length ? (
         <Box mb={showSearch ? '3' : '2'}>
           <Text size="1" color="gray" mb="2" as="div">
             {quickPickLabel}
@@ -172,6 +175,7 @@ export function CategoryCascadeSelect({
       {showSearch ? (
         <Box>
           <Input
+            className={controlClassName}
             value={searchQuery}
             placeholder={searchPlaceholder}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -228,6 +232,7 @@ export function CategoryCascadeSelect({
               return (
                 <Select
                   key={`${lvl.parentId || 'root'}:${i}`}
+                  className={controlClassName}
                   value={selected}
                   onChange={(e) => setLevel(i, e.target.value)}
                   onBlur={onBlur}

@@ -3,6 +3,7 @@ import { Box, Callout, Flex, Heading, Spinner, Text } from '@radix-ui/themes';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Clock, Flag, Image as ImageIcon, MapPin, RefreshCcw, ShieldCheck, Trash2, XCircle } from 'lucide-react';
 import { api, ApiError } from '../lib/api';
+import { normalizeMediaUrl } from '../lib/mediaUrl';
 import { Card, CardBody, CardHeader } from '../ui/Card';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
@@ -464,13 +465,13 @@ export function AdminModerationPage() {
 
                               {Array.isArray(detailsById[Number(r.listing)].images) && detailsById[Number(r.listing)].images.length ? (
                                 <a
-                                  href={detailsById[Number(r.listing)].images[0].image}
+                                  href={normalizeMediaUrl(detailsById[Number(r.listing)].images[0].image)}
                                   target="_blank"
                                   rel="noreferrer"
                                   className="h-24 w-24 overflow-hidden rounded-md border border-[var(--gray-a5)] bg-[var(--color-panel-solid)]"
                                 >
                                   <img
-                                    src={detailsById[Number(r.listing)].images[0].image}
+                                    src={normalizeMediaUrl(detailsById[Number(r.listing)].images[0].image)}
                                     alt={detailsById[Number(r.listing)].images[0].alt_text || ''}
                                     className="h-full w-full object-cover"
                                     loading="lazy"
@@ -814,12 +815,12 @@ export function AdminModerationPage() {
                                 {detailsById[r.id].images.slice(0, 6).map((img) => (
                                   <a
                                     key={img.id}
-                                    href={img.image}
+                                    href={normalizeMediaUrl(img.image)}
                                     target="_blank"
                                     rel="noreferrer"
                                     className="h-16 w-16 overflow-hidden rounded-md border border-[var(--gray-a5)] bg-[var(--color-panel-solid)]"
                                   >
-                                    <img src={img.image} alt={img.alt_text || ''} className="h-full w-full object-cover" loading="lazy" />
+                                    <img src={normalizeMediaUrl(img.image)} alt={img.alt_text || ''} className="h-full w-full object-cover" loading="lazy" />
                                   </a>
                                 ))}
                               </Flex>
