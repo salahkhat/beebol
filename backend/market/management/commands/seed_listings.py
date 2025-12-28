@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 import random
 from dataclasses import dataclass
 from decimal import Decimal
@@ -268,7 +269,7 @@ class Command(BaseCommand):
         max_categories = int(options.get("max_categories") or 0)
         sellers = max(1, int(options.get("sellers") or 1))
         seed = int(options.get("seed") or 1337)
-        images_per_listing = max(0, int(options.get("images_per_listing") or 0))
+        images_per_listing = max(0, int(options.get("images_per_listing") or 1))
         no_images = bool(options.get("no_images"))
         no_attributes = bool(options.get("no_attributes"))
 
@@ -402,18 +403,62 @@ class Command(BaseCommand):
                     if not no_images and images_per_listing > 0:
                         existing_count = listing.images.count()
                         needed = max(0, images_per_listing - existing_count)
+
+                        # Directory containing pre-existing images
+                        image_dir = 'seed_images'
+                        if not os.path.exists(image_dir):
+                            self.stdout.write(self.style.WARNING(f"Image directory not found: {image_dir}"))
+                            counts.inc("skipped", "images")
+                            continue
+
+                        # Load all images and category-specific images
+                        all_image_files = [
+                            os.path.join(root, f)
+                            for root, _, files in os.walk(image_dir)
+                            for f in files if f.endswith(('.png', '.jpg', '.jpeg'))
+                        ]
+
+                        category_dir = os.path.join(image_dir, _safe_slug(cat.slug))
+                        # Debug: Log the image directory and files found
+                        self.stdout.write(self.style.NOTICE(f"Searching for images in: {image_dir}"))
+
+                        if os.path.exists(category_dir):
+                            self.stdout.write(self.style.NOTICE(f"Category-specific directory found: {category_dir}"))
+                            image_files = [
+                                os.path.join(root, f)
+                                for root, _, files in os.walk(category_dir)
+                                for f in files if f.endswith(('.png', '.jpg', '.jpeg'))
+                            ]
+                            self.stdout.write(self.style.NOTICE(f"Images found in category directory: {len(image_files)}"))
+                        else:
+                            self.stdout.write(self.style.WARNING(f"Category-specific directory not found: {category_dir}"))
+                            image_files = []
+
+                        if not image_files:
+                            self.stdout.write(self.style.NOTICE("Falling back to all images in seed_images directory."))
+                            image_files = all_image_files
+
+                        self.stdout.write(self.style.NOTICE(f"Total images available for listing: {len(image_files)}"))
+
+                        if not image_files:
+                            self.stdout.write(self.style.WARNING("No images found for category or fallback."))
+                            counts.inc("skipped", "images")
+                            continue
+
+                        # Shuffle image files for random selection
+                        rnd.shuffle(image_files)
+
                         for img_i in range(existing_count, existing_count + needed):
-                            label = f"{cat.slug}\n{title}"
-                            png = _render_seed_image(text=label, seed=seed + (listing.id * 31) + img_i)
-                            filename = f"seed_{_safe_slug(cat.slug)}_{listing.id}_{img_i + 1}.png"
-                            cf = ContentFile(png, name=filename)
-                            ListingImage.objects.create(
-                                listing=listing,
-                                image=cf,
-                                alt_text=title,
-                                sort_order=img_i,
-                            )
-                            counts.inc("created", "images")
+                            image_path = image_files[img_i % len(image_files)]
+                            with open(image_path, 'rb') as img_file:
+                                cf = ContentFile(img_file.read(), name=os.path.basename(image_path))
+                                ListingImage.objects.create(
+                                    listing=listing,
+                                    image=cf,
+                                    alt_text=title,
+                                    sort_order=img_i,
+                                )
+                                counts.inc("created", "images")
                     else:
                         counts.inc("skipped", "images")
 
