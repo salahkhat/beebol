@@ -12,11 +12,10 @@ export function LanguageSwitch() {
 
   return (
     <Dropdown
+      py="2px"
       trigger={
         <Button
           variant="secondary"
-          size="sm"
-          className="px-2"
           title={label}
           aria-label={label}
         >

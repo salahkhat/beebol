@@ -152,6 +152,11 @@ class Listing(TimestampedModel):
         blank=True,
     )
 
+    # Optional precise coordinates for map views.
+    # Keep null when unknown.
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+
     status = models.CharField(max_length=16, choices=ListingStatus.choices, default=ListingStatus.DRAFT)
     moderation_status = models.CharField(
         max_length=16,
@@ -173,6 +178,11 @@ class Listing(TimestampedModel):
     def clean(self):
         if self.price is not None and self.price < Decimal("0"):
             raise ValidationError({"price": "Price cannot be negative"})
+
+        if self.latitude is not None and (self.latitude < Decimal("-90") or self.latitude > Decimal("90")):
+            raise ValidationError({"latitude": "Latitude must be between -90 and 90"})
+        if self.longitude is not None and (self.longitude < Decimal("-180") or self.longitude > Decimal("180")):
+            raise ValidationError({"longitude": "Longitude must be between -180 and 180"})
 
     def __str__(self) -> str:
         return self.title

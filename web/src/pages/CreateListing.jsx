@@ -14,6 +14,7 @@ import {
   Images,
   ImagePlus,
   Info,
+  LocateFixed,
   MapPin,
   PackageOpen,
   Shapes,
@@ -23,6 +24,8 @@ import {
   UploadCloud,
 } from 'lucide-react';
 import { api, ApiError } from '../lib/api';
+import { MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
 import { Card, CardBody, CardHeader } from '../ui/Card';
 import { Input } from '../ui/Input';
 import { Textarea } from '../ui/Textarea';
@@ -36,6 +39,73 @@ import { useAuth } from '../auth/AuthContext';
 import { CategoryCascadeSelect } from '../components/CategoryCascadeSelect';
 import { formatAttributeValue, getAttributeChoiceLabel } from '../lib/attributeFormat';
 import { buildCategoryIndex } from '../lib/categoryTree';
+
+function toNumberOrNull(v) {
+  if (v == null) return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return n;
+}
+
+function setCenteredDraftValue(setter, n) {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return;
+  setter(n.toFixed(6));
+}
+
+function SyncMapToCenter({ center }) {
+  const map = useMap();
+  const lastAppliedRef = useRef(null);
+
+  useEffect(() => {
+    if (!map) return;
+    const lat = Array.isArray(center) ? Number(center[0]) : NaN;
+    const lng = Array.isArray(center) ? Number(center[1]) : NaN;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    const last = lastAppliedRef.current;
+    const key = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+    if (last === key) return;
+    lastAppliedRef.current = key;
+
+    const cur = map.getCenter();
+    const dLat = Math.abs(Number(cur?.lat) - lat);
+    const dLng = Math.abs(Number(cur?.lng) - lng);
+    if (dLat < 1e-7 && dLng < 1e-7) return;
+
+    map.setView([lat, lng], map.getZoom(), { animate: false });
+  }, [map, center]);
+
+  return null;
+}
+
+function TrackCenter({ onCenterChange }) {
+  const map = useMapEvents({
+    moveend() {
+      try {
+        const c = map.getCenter();
+        onCenterChange?.(c.lat, c.lng);
+      } catch {
+        // ignore
+      }
+    },
+  });
+  return null;
+}
+
+function getCurrentPositionAsync(options) {
+  return new Promise((resolve, reject) => {
+    try {
+      const geo = navigator?.geolocation;
+      if (!geo || typeof geo.getCurrentPosition !== 'function') {
+        reject(new Error('Geolocation unavailable'));
+        return;
+      }
+      geo.getCurrentPosition(resolve, reject, options);
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
 
 export function CreateListingPage() {
   const nav = useNavigate();
@@ -76,6 +146,11 @@ export function CreateListingPage() {
   const [governorate, setGovernorate] = useState('');
   const [city, setCity] = useState('');
   const [neighborhood, setNeighborhood] = useState('');
+
+  const [latitude, setLatitude] = useState('');
+  const [longitude, setLongitude] = useState('');
+
+  const didAutoPinRef = useRef(false);
 
   const [step, setStep] = useState(0);
   const [photos, setPhotos] = useState([]);
@@ -123,6 +198,8 @@ export function CreateListingPage() {
     const govHas = String(d.governorate || '').trim().length > 0;
     const cityHas = String(d.city || '').trim().length > 0;
     const neighborhoodHas = String(d.neighborhood || '').trim().length > 0;
+    const latHas = String(d.latitude ?? '').trim().length > 0;
+    const lngHas = String(d.longitude ?? '').trim().length > 0;
     const stepHas = Number(d.step) > 0;
     const photosHas = Number(d.photosCount) > 0;
 
@@ -137,6 +214,8 @@ export function CreateListingPage() {
       govHas ||
       cityHas ||
       neighborhoodHas ||
+      latHas ||
+      lngHas ||
       stepHas ||
       photosHas ||
       statusHas ||
@@ -201,6 +280,9 @@ export function CreateListingPage() {
     setGovernorate(d.governorate || '');
     setCity(d.city || '');
     setNeighborhood(d.neighborhood || '');
+
+    setLatitude(d.latitude ?? '');
+    setLongitude(d.longitude ?? '');
 
     setAttributes(d.attributes && typeof d.attributes === 'object' ? d.attributes : {});
 
@@ -335,6 +417,8 @@ export function CreateListingPage() {
         governorate: Number(governorate),
         city: Number(city),
         neighborhood: neighborhood ? Number(neighborhood) : null,
+        latitude: String(latitude || '').trim() ? String(latitude).trim() : null,
+        longitude: String(longitude || '').trim() ? String(longitude).trim() : null,
         attributes,
       };
       const created = await api.createListing(payload);
@@ -438,6 +522,54 @@ export function CreateListingPage() {
   const canGoPricing = priceOnInquiry ? true : currency && priceOk;
   const canGoLocation = governorate && city;
 
+  const latitudeOk = latitude === '' || !Number.isNaN(Number(latitude));
+  const longitudeOk = longitude === '' || !Number.isNaN(Number(longitude));
+
+  const pinnedLat = useMemo(() => toNumberOrNull(latitude), [latitude]);
+  const pinnedLng = useMemo(() => toNumberOrNull(longitude), [longitude]);
+
+  const mapCenter = useMemo(() => {
+    if (pinnedLat != null && pinnedLng != null) return [pinnedLat, pinnedLng];
+    // Default center (Syria region) when no pin exists yet.
+    return [34.8, 38.9];
+  }, [pinnedLat, pinnedLng]);
+
+  useEffect(() => {
+    // When the user reaches the location step with no coords yet, try to start
+    // from their current location (if permitted). If not available, fall back
+    // to the country default center.
+    if (step !== 2) return;
+    if (didAutoPinRef.current) return;
+    if (String(latitude || '').trim() || String(longitude || '').trim()) return;
+
+    didAutoPinRef.current = true;
+
+    const fallback = () => {
+      setLatitude('34.800000');
+      setLongitude('38.900000');
+      setTimeout(() => saveDraftSilent(), 0);
+    };
+
+    try {
+      getCurrentPositionAsync({ enableHighAccuracy: false, maximumAge: 5 * 60 * 1000, timeout: 8000 })
+        .then((pos) => {
+          const lat = pos?.coords?.latitude;
+          const lng = pos?.coords?.longitude;
+          if (typeof lat === 'number' && Number.isFinite(lat) && typeof lng === 'number' && Number.isFinite(lng)) {
+            setLatitude(lat.toFixed(6));
+            setLongitude(lng.toFixed(6));
+            setTimeout(() => saveDraftSilent(), 0);
+            return;
+          }
+          fallback();
+        })
+        .catch(() => fallback());
+    } catch {
+      fallback();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+
   const maxReachableStep = useMemo(() => {
     // You can always stay on or go back to earlier steps.
     // Forward navigation is gated by required fields.
@@ -537,6 +669,8 @@ export function CreateListingPage() {
       governorate,
       city,
       neighborhood,
+      latitude,
+      longitude,
       attributes,
       photosCount: photos.length,
     };
@@ -864,6 +998,123 @@ export function CreateListingPage() {
                     </option>
                   ))}
                 </Select>
+              </div>
+
+              <div className="pt-px sm:col-span-2">
+                <Flex align="center" justify="between" gap="2" mt="1" mb="2" wrap="wrap">
+                  <Flex align="center" gap="2">
+                    <Icon icon={MapPin} size={16} className="text-[var(--gray-11)]" aria-label="" />
+                    <Text as="div" size="2" color="gray">
+                      {t('create_pin_on_map')}
+                    </Text>
+                  </Flex>
+                  <Text size="1" color="gray" as="div">
+                    {t('create_pin_help')}
+                  </Text>
+                </Flex>
+
+                <Box className="relative overflow-hidden rounded-md border border-[var(--gray-a5)] bg-[var(--color-panel-solid)]">
+                  <MapContainer
+                    center={mapCenter}
+                    zoom={pinnedLat != null && pinnedLng != null ? 13 : 7}
+                    style={{ height: 340, width: '100%' }}
+                    scrollWheelZoom
+                    className="z-0"
+                  >
+                    <TileLayer
+                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    />
+
+                    <SyncMapToCenter center={mapCenter} />
+                    <TrackCenter
+                      onCenterChange={(lat, lng) => {
+                        setCenteredDraftValue(setLatitude, lat);
+                        setCenteredDraftValue(setLongitude, lng);
+                        setTimeout(() => saveDraftSilent(), 0);
+                      }}
+                    />
+                  </MapContainer>
+
+                  {/* Center pin overlay */}
+                  <div
+                    className="pointer-events-none absolute left-1/2 top-1/2 z-20"
+                    style={{ transform: 'translate(-50%, calc(-100% + 6px))' }}
+                    aria-hidden="true"
+                  >
+                    <Icon icon={MapPin} size={34} className="text-[var(--accent-9)]" aria-label="" />
+                  </div>
+
+                  {/* Go to current location */}
+                  <div className="absolute bottom-3 right-3 z-20 pointer-events-auto">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={async () => {
+                        try {
+                          const pos = await getCurrentPositionAsync({ enableHighAccuracy: true, maximumAge: 30_000, timeout: 8000 });
+                          const lat = pos?.coords?.latitude;
+                          const lng = pos?.coords?.longitude;
+                          if (typeof lat === 'number' && Number.isFinite(lat) && typeof lng === 'number' && Number.isFinite(lng)) {
+                            setLatitude(lat.toFixed(6));
+                            setLongitude(lng.toFixed(6));
+                            setTimeout(() => saveDraftSilent(), 0);
+                          }
+                        } catch {
+                          // ignore
+                        }
+                      }}
+                      title={t('use_current_location')}
+                    >
+                      <Flex align="center" gap="2">
+                        <Icon icon={LocateFixed} size={16} />
+                        <Text as="span" size="2">
+                          {t('use_current_location')}
+                        </Text>
+                      </Flex>
+                    </Button>
+                  </div>
+                </Box>
+              </div>
+
+              <div className="pt-px">
+                <Flex align="center" gap="2" mt="1" mb="2">
+                  <Icon icon={MapPin} size={16} className="text-[var(--gray-11)]" aria-label="" />
+                  <Text as="div" size="2" color="gray">
+                    {t('latitude_optional')}
+                  </Text>
+                </Flex>
+                <Input
+                  value={latitude}
+                  onChange={(e) => setLatitude(e.target.value)}
+                  onBlur={saveDraftSilent}
+                  placeholder="33.5"
+                />
+                {!latitudeOk ? (
+                  <Text size="1" color="red" mt="1" as="div">
+                    {t('invalid')}
+                  </Text>
+                ) : null}
+              </div>
+
+              <div className="pt-px">
+                <Flex align="center" gap="2" mt="1" mb="2">
+                  <Icon icon={MapPin} size={16} className="text-[var(--gray-11)]" aria-label="" />
+                  <Text as="div" size="2" color="gray">
+                    {t('longitude_optional')}
+                  </Text>
+                </Flex>
+                <Input
+                  value={longitude}
+                  onChange={(e) => setLongitude(e.target.value)}
+                  onBlur={saveDraftSilent}
+                  placeholder="36.3"
+                />
+                {!longitudeOk ? (
+                  <Text size="1" color="red" mt="1" as="div">
+                    {t('invalid')}
+                  </Text>
+                ) : null}
               </div>
             </Grid>
           </div>

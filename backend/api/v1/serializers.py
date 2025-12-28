@@ -210,6 +210,8 @@ class ListingListSerializer(serializers.ModelSerializer):
             "governorate",
             "city",
             "neighborhood",
+            "latitude",
+            "longitude",
             "created_at",
         ]
 
@@ -255,6 +257,14 @@ class ListingWriteSerializer(serializers.ModelSerializer):
         incoming_attributes = attrs.get("attributes")
         if incoming_attributes is not None and not isinstance(incoming_attributes, dict):
             raise serializers.ValidationError({"attributes": "attributes must be an object"})
+
+        # Coordinate validation (optional)
+        lat = attrs.get("latitude")
+        lng = attrs.get("longitude")
+        if lat is not None and (lat < Decimal("-90") or lat > Decimal("90")):
+            raise serializers.ValidationError({"latitude": "Latitude must be between -90 and 90"})
+        if lng is not None and (lng < Decimal("-180") or lng > Decimal("180")):
+            raise serializers.ValidationError({"longitude": "Longitude must be between -180 and 180"})
 
         governorate = attrs.get("governorate")
         city = attrs.get("city")
@@ -416,6 +426,8 @@ class ListingWriteSerializer(serializers.ModelSerializer):
             "governorate",
             "city",
             "neighborhood",
+            "latitude",
+            "longitude",
             "attributes",
         ]
         read_only_fields = ["id"]

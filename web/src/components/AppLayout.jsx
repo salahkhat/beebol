@@ -467,7 +467,11 @@ export function AppLayout() {
       </header>
 
       <main id="main" tabIndex={-1} className="focus:outline-none">
-        <Container size="4" py={{ initial: '4', sm: '5' }}>
+        <Container
+          size="4"
+          py={{ initial: '4', sm: '5' }}
+          style={location.pathname.startsWith('/map') ? { maxWidth: '100%' } : undefined}
+        >
           <div key={`${location.pathname}${location.search}`} className="bb-animate-enter">
             <Outlet />
           </div>

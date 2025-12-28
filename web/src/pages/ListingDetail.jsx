@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Box, Flex, Grid, Heading, Link as RTLink, Text } from '@radix-ui/themes';
 import { ArrowLeft, ArrowRight, Link2, MessageSquareText } from 'lucide-react';
+import { MapContainer, TileLayer, CircleMarker } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
 import { api, ApiError } from '../lib/api';
 import { Card, CardBody, CardHeader } from '../ui/Card';
 import { Badge } from '../ui/Badge';
@@ -24,6 +26,13 @@ import { addWatch, isWatched, removeWatch, updateWatchSnapshotFromListing } from
 import { followSeller, isFollowingSeller, unfollowSeller } from '../lib/following';
 import { normalizeMediaUrl } from '../lib/mediaUrl';
 import { formatAttributeValue } from '../lib/attributeFormat';
+
+function toNumberOrNull(v) {
+  if (v == null) return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return n;
+}
 
 function moderationBadgeVariant(m) {
   if (m === 'approved') return 'ok';
@@ -104,6 +113,10 @@ export function ListingDetailPage() {
   const sellerName = data?.seller_username || data?.seller_id;
   const [followNonce, setFollowNonce] = useState(0);
   const isFollowing = useMemo(() => (sellerId ? isFollowingSeller(sellerId) : false), [sellerId, followNonce]);
+
+  const lat = useMemo(() => toNumberOrNull(data?.latitude), [data?.latitude]);
+  const lng = useMemo(() => toNumberOrNull(data?.longitude), [data?.longitude]);
+  const hasCoords = lat != null && lng != null;
 
   function toggleFollow() {
     if (!sellerId) return;
@@ -767,6 +780,27 @@ export function ListingDetailPage() {
                       {data.city?.name_ar || data.city?.name_en}
                       {data.neighborhood ? ` · ${data.neighborhood?.name_ar || data.neighborhood?.name_en}` : ''}
                     </Text>
+
+                    {hasCoords ? (
+                      <Box className="mt-2 overflow-hidden rounded-md border border-[var(--gray-a5)]">
+                        <MapContainer
+                          center={[lat, lng]}
+                          zoom={14}
+                          style={{ height: 220, width: '100%' }}
+                          scrollWheelZoom={false}
+                        >
+                          <TileLayer
+                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                          />
+                          <CircleMarker
+                            center={[lat, lng]}
+                            radius={8}
+                            pathOptions={{ color: 'var(--accent-9)', fillColor: 'var(--accent-9)', fillOpacity: 0.9 }}
+                          />
+                        </MapContainer>
+                      </Box>
+                    ) : null}
                     <Text size="2">
                       <Text as="span" color="gray">
                         {t('detail_created')}:

@@ -22,6 +22,7 @@ const MyReportsPage = lazy(() => import('./pages/MyReports').then((m) => ({ defa
 const WatchlistPage = lazy(() => import('./pages/Watchlist').then((m) => ({ default: m.WatchlistPage })));
 const FollowingPage = lazy(() => import('./pages/Following').then((m) => ({ default: m.FollowingPage })));
 const CompareListingsPage = lazy(() => import('./pages/CompareListings').then((m) => ({ default: m.CompareListingsPage })));
+const MapListingsPage = lazy(() => import('./pages/MapListings').then((m) => ({ default: m.MapListingsPage })));
 const AdminDashboardPage = lazy(() => import('./pages/AdminDashboard').then((m) => ({ default: m.AdminDashboardPage })));
 const AdminModerationPage = lazy(() => import('./pages/AdminModeration').then((m) => ({ default: m.AdminModerationPage })));
 const ThreadsPage = lazy(() => import('./pages/Threads').then((m) => ({ default: m.ThreadsPage })));
@@ -94,6 +95,7 @@ export function App() {
           <Route path="/" element={<Navigate to="/listings" replace />} />
           <Route path="/listings" element={withSuspense(<ListingsPage />)} />
           <Route path="/listings/:id" element={withSuspense(<ListingDetailPage />)} />
+          <Route path="/map" element={withSuspense(<MapListingsPage />)} />
           <Route path="/sellers/:id" element={withSuspense(<SellerProfilePage />)} />
           <Route path="/compare" element={withSuspense(<CompareListingsPage />)} />
           <Route path="/login" element={withSuspense(<LoginPage />)} />
