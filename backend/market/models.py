@@ -194,7 +194,11 @@ def listing_image_upload_to(instance: "ListingImage", filename: str) -> str:
 
 class ListingImage(TimestampedModel):
     listing = models.ForeignKey(Listing, on_delete=models.CASCADE, related_name="images")
-    image = models.ImageField(upload_to=listing_image_upload_to)
+    from django.conf import settings
+    from django.utils.module_loading import import_string
+    # Dynamically get the default storage class from settings
+    storage_class = import_string(getattr(settings, 'DEFAULT_FILE_STORAGE', 'django.core.files.storage.FileSystemStorage'))
+    image = models.ImageField(upload_to=listing_image_upload_to, storage=storage_class())
     alt_text = models.CharField(max_length=140, blank=True)
     sort_order = models.PositiveIntegerField(default=0)
 

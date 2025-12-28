@@ -115,5 +115,7 @@ if (!(Test-Path (Join-Path $backendRoot '.env'))) {
 Write-Host "[backend] Migrating DB" -ForegroundColor Cyan
 & $pythonExe manage.py migrate
 
-Write-Host "[backend] Starting server on http://127.0.0.1:8000" -ForegroundColor Cyan
-& $pythonExe manage.py runserver 127.0.0.1:8000
+Write-Host "[backend] Activating .venv" -ForegroundColor Cyan
+& "$venvPath\Scripts\Activate.ps1"
+Write-Host "[backend] Starting server on https://127.0.0.1:8000" -ForegroundColor Cyan
+& $pythonExe manage.py runserver_plus --cert-file ../backend/cert.pem --key-file ../backend/key.pem 127.0.0.1:8000

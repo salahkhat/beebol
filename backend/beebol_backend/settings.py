@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     # classifieds domain app (local editable install from backend/)
     "django_classified",
     "storages",
+    "django_extensions",
 ]
 
 SITE_ID = 1
