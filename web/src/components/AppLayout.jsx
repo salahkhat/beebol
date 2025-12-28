@@ -21,13 +21,78 @@ import { useI18n } from '../i18n/i18n';
 import { Icon } from '../ui/Icon';
 import { useThemeMode } from '../ui/ThemeMode';
 import { Moon, Sun } from 'lucide-react';
+import { api } from '../lib/api';
+import { buildCategoryIndex } from '../lib/categoryTree';
+import { CategoryMegaMenu } from './CategoryMegaMenu';
 
 export function AppLayout() {
   const { user, isAuthenticated, isStaff, logout } = useAuth();
-  const { t } = useI18n();
+  const { t, locale, dir } = useI18n();
   const { appearance, toggle } = useThemeMode();
   const location = useLocation();
   const navigate = useNavigate();
+
+  const [categories, setCategories] = useState([]);
+  const [categoriesError, setCategoriesError] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const data = await api.categoriesAll();
+        if (!alive) return;
+        setCategories(Array.isArray(data) ? data : []);
+        setCategoriesError('');
+      } catch (e) {
+        if (!alive) return;
+        setCategories([]);
+        setCategoriesError(e ? String(e.message || e) : '');
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const categoryIndex = useMemo(() => buildCategoryIndex(categories || []), [categories]);
+
+  const categoriesBySlug = useMemo(() => {
+    const map = new Map();
+    for (const c of categories || []) {
+      const slug = String(c?.slug || '').trim();
+      if (!slug) continue;
+      map.set(slug, c);
+    }
+    return map;
+  }, [categories]);
+
+  function goToCategory(categoryId) {
+    const id = String(categoryId || '').trim();
+    if (!id) {
+      navigate('/listings');
+      return;
+    }
+    navigate(`/listings?category=${encodeURIComponent(id)}`);
+  }
+
+  const popularSlugs = useMemo(
+    () => ['cars', 'phones', 'electronics', 'furniture', 'motorcycles', 'fashion', 'kids'],
+    [],
+  );
+
+  const popularCategories = useMemo(() => {
+    const out = [];
+    for (const slug of popularSlugs) {
+      const c = categoriesBySlug.get(slug);
+      if (!c) continue;
+      out.push({
+        slug,
+        id: String(c.id),
+        label: categoryIndex.getLabel(c, locale),
+      });
+    }
+    return out;
+  }, [popularSlugs, categoriesBySlug, categoryIndex, locale]);
 
   useEffect(() => {
     // Keep navigation between routes feeling crisp and predictable.
@@ -365,6 +430,40 @@ export function AppLayout() {
             </Flex>
           </Flex>
         </Container>
+
+        <div className="border-t border-[var(--gray-a5)]">
+          <Container size="4">
+            <div className="flex items-center gap-2 py-2">
+              <CategoryMegaMenu
+                categories={categories}
+                locale={locale}
+                dir={dir}
+                t={t}
+                label={t('all_categories')}
+                loading={!categoriesError && (!categories || categories.length === 0)}
+                error={categoriesError}
+                onPick={(id) => goToCategory(id)}
+              />
+
+              <div className="min-w-0 flex-1 overflow-x-auto">
+                <div className="flex items-center gap-1 whitespace-nowrap">
+                  {popularCategories.map((c) => (
+                    <Button
+                      key={c.slug}
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        goToCategory(c.id);
+                      }}
+                    >
+                      {c.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </Container>
+        </div>
       </header>
 
       <main id="main" tabIndex={-1} className="focus:outline-none">

@@ -35,7 +35,33 @@ export function CategoryCascadeSelect({
 }) {
   const idx = useMemo(() => buildCategoryIndex(categories || []), [categories]);
 
-  const initialPath = useMemo(() => idx.pathToRoot(value ? String(value) : ''), [idx, value]);
+  const dbRoots = useMemo(() => idx.getChildren(''), [idx]);
+  const generalRootId = useMemo(() => {
+    if (dbRoots.length !== 1) return '';
+    const r = dbRoots[0];
+    if (String(r?.slug || '') !== 'general') return '';
+    return String(r.id);
+  }, [dbRoots]);
+
+  function getVirtualRoots() {
+    return generalRootId ? idx.getChildren(generalRootId) : dbRoots;
+  }
+
+  function pathToRootOmitGeneral(id) {
+    const ids = idx.pathToRoot(id ? String(id) : '');
+    if (generalRootId && ids.length && ids[0] === generalRootId) return ids.slice(1);
+    return ids;
+  }
+
+  function getPathLabelOmitGeneral(id, sep = ' › ') {
+    const ids = pathToRootOmitGeneral(id);
+    return ids
+      .map((x) => idx.getLabel(idx.byId.get(String(x)), locale))
+      .filter(Boolean)
+      .join(sep);
+  }
+
+  const initialPath = useMemo(() => pathToRootOmitGeneral(value ? String(value) : ''), [value, generalRootId, idx]);
   const [path, setPath] = useState(initialPath);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -46,8 +72,10 @@ export function CategoryCascadeSelect({
   const levels = useMemo(() => {
     const out = [];
 
+    const rootParentId = generalRootId ? generalRootId : '';
+
     // level 0: roots
-    out.push({ parentId: '', options: idx.getChildren('') });
+    out.push({ parentId: rootParentId, options: idx.getChildren(rootParentId) });
 
     for (const id of path) {
       const children = idx.getChildren(id);
@@ -56,7 +84,7 @@ export function CategoryCascadeSelect({
     }
 
     return out;
-  }, [idx, path]);
+  }, [idx, path, generalRootId]);
 
   function setLevel(levelIndex, nextIdRaw) {
     const nextId = String(nextIdRaw || '');
@@ -98,7 +126,7 @@ export function CategoryCascadeSelect({
 
   const smColumns = String(Math.min(3, Math.max(1, levels.length)));
 
-  const roots = useMemo(() => idx.getChildren(''), [idx]);
+  const roots = useMemo(() => getVirtualRoots(), [idx, dbRoots, generalRootId]);
 
   const iconBySlug = {
     vehicles: Car,
@@ -128,7 +156,7 @@ export function CategoryCascadeSelect({
       onChange?.('');
       return;
     }
-    const nextPath = idx.pathToRoot(picked);
+    const nextPath = pathToRootOmitGeneral(picked);
     setPath(nextPath);
     if (leafOnly && !idx.isLeaf(picked)) {
       onChange?.('');
@@ -138,7 +166,7 @@ export function CategoryCascadeSelect({
   }
 
   const pathIdForPreview = value ? String(value) : lastPicked ? String(lastPicked) : '';
-  const pathPreview = pathIdForPreview ? idx.getPathLabel(pathIdForPreview, locale) : '';
+  const pathPreview = pathIdForPreview ? getPathLabelOmitGeneral(pathIdForPreview) : '';
 
   return (
     <div>
@@ -199,13 +227,13 @@ export function CategoryCascadeSelect({
                         applyPickedId(r.id);
                         setSearchQuery('');
                       }}
-                      title={r.pathLabel}
+                      title={getPathLabelOmitGeneral(r.id)}
                     >
                       <Text as="div" size="2" weight="bold">
                         {r.label}
                       </Text>
                       <Text as="div" size="1" color="gray">
-                        {r.pathLabel}
+                        {getPathLabelOmitGeneral(r.id)}
                       </Text>
                     </button>
                   ))}

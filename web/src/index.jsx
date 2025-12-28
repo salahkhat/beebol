@@ -12,7 +12,7 @@ function Root() {
 	const { appearance } = useThemeMode();
 	return (
 		<ToastProvider>
-			<Theme appearance={appearance} accentColor="indigo" grayColor="slate" radius="large">
+			<Theme appearance={appearance} accentColor="teal" grayColor="sand" radius="large">
 				<I18nProvider>
 					<AuthProvider>
 						<App />

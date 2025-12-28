@@ -409,7 +409,7 @@ export function ListingsPage() {
                               </Text>
                               {rv.price != null ? (
                                 <Text size="1" color="gray">
-                                  {formatMoney(rv.price, rv.currency)}
+                                  {Number(rv.price) === 0 ? t('price_free') : formatMoney(rv.price, rv.currency)}
                                 </Text>
                               ) : null}
                             </Flex>
@@ -788,7 +788,7 @@ export function ListingsPage() {
                             <Text weight="bold" size="3" style={{ wordBreak: 'break-word' }}>
                               {r.title}
                             </Text>
-                            <Text size="2">{formatMoney(r.price, r.currency)}</Text>
+                            <Text size="2">{Number(r.price) === 0 ? t('price_free') : formatMoney(r.price, r.currency)}</Text>
                             <Flex align="center" gap="2" wrap="wrap">
                               <Icon icon={MapPin} size={14} className="text-[var(--gray-11)]" aria-label="" />
                               <Text size="1" color="gray">

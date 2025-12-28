@@ -91,6 +91,12 @@ export function ListingDetailPage() {
   const [answerDrafts, setAnswerDrafts] = useState(() => new Map());
 
   const isOwner = !!user && !!data && data.seller_id === user.id;
+
+  const priceOnInquiry = useMemo(() => {
+    const v = data?.attributes?.price_on_inquiry;
+    if (v === true) return true;
+    return String(v || '').trim().toLowerCase() === 'true';
+  }, [data?.attributes?.price_on_inquiry]);
   const [watchNonce, setWatchNonce] = useState(0);
   const watched = useMemo(() => (data?.id ? isWatched(data.id) : false), [data?.id, watchNonce]);
 
@@ -579,7 +585,13 @@ export function ListingDetailPage() {
                 {data?.title ? data.title : loading ? <Skeleton className="h-6 w-72 max-w-full" /> : t('listings_title')}
               </Heading>
               {data ? (
-                <Text size="3">{formatMoney(data.price, data.currency)}</Text>
+                <Text size="3">
+                  {priceOnInquiry
+                    ? t('price_on_inquiry_display')
+                    : Number(data.price) === 0
+                      ? t('price_free')
+                      : formatMoney(data.price, data.currency)}
+                </Text>
               ) : loading ? (
                 <Skeleton className="mt-2 h-5 w-40" />
               ) : null}

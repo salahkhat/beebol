@@ -8,6 +8,23 @@ import { buildCategoryIndex } from '../lib/categoryTree';
 export function CategoryFilterPicker({ categories, value, onChange, locale = 'ar', t }) {
   const idx = useMemo(() => buildCategoryIndex(categories || []), [categories]);
 
+  const dbRoots = useMemo(() => idx.getChildren(''), [idx]);
+  const generalRootId = useMemo(() => {
+    if (dbRoots.length !== 1) return '';
+    const r = dbRoots[0];
+    if (String(r?.slug || '') !== 'general') return '';
+    return String(r.id);
+  }, [dbRoots]);
+
+  function getPathLabelOmitGeneral(id, sep = ' › ') {
+    const ids = idx.pathToRoot(id ? String(id) : '');
+    const trimmed = generalRootId && ids.length && ids[0] === generalRootId ? ids.slice(1) : ids;
+    return trimmed
+      .map((x) => idx.getLabel(idx.byId.get(String(x)), locale))
+      .filter(Boolean)
+      .join(sep);
+  }
+
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
 
@@ -28,7 +45,7 @@ export function CategoryFilterPicker({ categories, value, onChange, locale = 'ar
     return idx.search(q, locale, { limit: 10, leafOnly: false });
   }, [idx, query, locale]);
 
-  const selectedPath = value ? idx.getPathLabel(String(value), locale) : '';
+  const selectedPath = value ? getPathLabelOmitGeneral(String(value)) : '';
 
   function clear() {
     setQuery('');
@@ -95,13 +112,13 @@ export function CategoryFilterPicker({ categories, value, onChange, locale = 'ar
                     setQuery('');
                     setOpen(false);
                   }}
-                  title={r.pathLabel}
+                  title={getPathLabelOmitGeneral(r.id)}
                 >
                   <Text as="div" size="2" weight="bold">
                     {r.label}
                   </Text>
                   <Text as="div" size="1" color="gray">
-                    {r.pathLabel}
+                    {getPathLabelOmitGeneral(r.id)}
                   </Text>
                 </button>
               ))}

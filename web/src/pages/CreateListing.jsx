@@ -287,6 +287,12 @@ export function CreateListingPage() {
           if (prev[k] == null) continue;
           next[k] = prev[k];
         }
+
+        // Spec defaults (docs/Categories.md)
+        if (next.show_phone == null) next.show_phone = 'true';
+        if (next.price_on_inquiry == null) next.price_on_inquiry = 'false';
+        if (next.deal_type == null) next.deal_type = 'sale';
+
         return next;
       });
     }
@@ -391,9 +397,27 @@ export function CreateListingPage() {
   }
 
   const priceOk = price === '' || !Number.isNaN(Number(price));
+  const priceIsFree = priceOk && String(price).trim() !== '' && Number(price) === 0;
 
   const catIdx = useMemo(() => buildCategoryIndex(cats), [cats]);
   const categoryLeafOk = category ? catIdx.isLeaf(String(category)) : false;
+
+  const generalRootId = useMemo(() => {
+    const roots = catIdx.getChildren('');
+    if (roots.length !== 1) return '';
+    const r = roots[0];
+    if (String(r?.slug || '') !== 'general') return '';
+    return String(r.id);
+  }, [catIdx]);
+
+  function getCategoryPathLabel(id, sep = ' › ') {
+    const ids = catIdx.pathToRoot(id ? String(id) : '');
+    const trimmed = generalRootId && ids.length && ids[0] === generalRootId ? ids.slice(1) : ids;
+    return trimmed
+      .map((x) => catIdx.getLabel(catIdx.byId.get(String(x)), locale))
+      .filter(Boolean)
+      .join(sep);
+  }
 
   function attrLabel(d) {
     if (!d) return '';
@@ -404,8 +428,14 @@ export function CreateListingPage() {
     return en || ar || key;
   }
 
+  const priceOnInquiry = useMemo(() => {
+    const v = attributes?.price_on_inquiry;
+    if (v === true) return true;
+    return String(v || '').trim().toLowerCase() === 'true';
+  }, [attributes?.price_on_inquiry]);
+
   const canGoBasic = title.trim().length > 0 && category && categoryLeafOk;
-  const canGoPricing = currency && priceOk;
+  const canGoPricing = priceOnInquiry ? true : currency && priceOk;
   const canGoLocation = governorate && city;
 
   const maxReachableStep = useMemo(() => {
@@ -703,7 +733,18 @@ export function CreateListingPage() {
                   onChange={(e) => setPrice(e.target.value)}
                   onBlur={saveDraftSilent}
                   placeholder="123.00"
+                  disabled={priceOnInquiry}
                 />
+                {priceOnInquiry ? (
+                  <Text size="1" color="gray" mt="1" as="div">
+                    {t('price_on_inquiry_hint')}
+                  </Text>
+                ) : null}
+                {priceIsFree ? (
+                  <Text size="1" color="gray" mt="1" as="div">
+                    {t('price_free')}
+                  </Text>
+                ) : null}
                 {!priceOk ? (
                   <Flex align="center" gap="2" mt="1">
                     <Icon icon={Tag} size={14} className="text-[var(--red-11)]" aria-label="" />
@@ -721,7 +762,7 @@ export function CreateListingPage() {
                     {t('create_currency')}
                   </Text>
                 </Flex>
-                <Input value={currency} onChange={(e) => setCurrency(e.target.value)} onBlur={saveDraftSilent} />
+                <Input value={currency} onChange={(e) => setCurrency(e.target.value)} onBlur={saveDraftSilent} disabled={priceOnInquiry} />
               </div>
 
               <div className="pt-px">
@@ -1004,13 +1045,13 @@ export function CreateListingPage() {
                     <Text as="span" color="gray">
                       {t('listings_category')}:
                     </Text>{' '}
-                    {category ? catIdx.getPathLabel(String(category), locale) || '-' : '-'}
+                    {category ? getCategoryPathLabel(String(category)) || '-' : '-'}
                   </Text>
                   <Text size="2">
                     <Text as="span" color="gray">
                       {t('create_price')}:
                     </Text>{' '}
-                    {price ? `${price} ${currency}` : '-'}
+                    {priceOnInquiry ? t('price_on_inquiry_display') : price ? `${price} ${currency}` : '-'}
                   </Text>
                   <Text size="2">
                     <Text as="span" color="gray">

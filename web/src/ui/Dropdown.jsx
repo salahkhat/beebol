@@ -1,8 +1,8 @@
 import { DropdownMenu } from '@radix-ui/themes';
 
-export function Dropdown({ trigger, children }) {
+export function Dropdown({ trigger, children, ...rootProps }) {
   return (
-    <DropdownMenu.Root>
+    <DropdownMenu.Root {...rootProps}>
       <DropdownMenu.Trigger asChild>{trigger}</DropdownMenu.Trigger>
       <DropdownMenu.Content className="bb-popover">{children}</DropdownMenu.Content>
     </DropdownMenu.Root>
