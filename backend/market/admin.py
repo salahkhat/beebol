@@ -124,8 +124,8 @@ class ListingAdmin(admin.ModelAdmin):
             return redirect("..")
 
         try:
-            call_command("seed_listings", per_category=5)
-            self.message_user(request, "Seeded listings: 5 per category.", level=messages.SUCCESS)
+            call_command("seed_listings", per_category=1)
+            self.message_user(request, "Seeded listings: 1 per category.", level=messages.SUCCESS)
         except Exception as exc:  # noqa: BLE001 - show error in admin UI
             self.message_user(request, f"Seeding failed: {exc}", level=messages.ERROR)
 
