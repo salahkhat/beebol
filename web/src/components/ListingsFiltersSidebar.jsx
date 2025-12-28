@@ -112,8 +112,6 @@ export function ListingsFiltersSidebar({
                   value={params.governorate}
                   onChange={(e) => {
                     setParam('governorate', e.target.value);
-                    setParam('city', '');
-                    setParam('neighborhood', '');
                   }}
                 >
                   <option value="">{t('listings_governorate')}</option>
@@ -137,7 +135,6 @@ export function ListingsFiltersSidebar({
                   value={params.city}
                   onChange={(e) => {
                     setParam('city', e.target.value);
-                    setParam('neighborhood', '');
                   }}
                   disabled={!params.governorate}
                 >

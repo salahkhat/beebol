@@ -449,9 +449,8 @@ export function AppLayout() {
               <div className="flex-1">
                 <div className="flex justify-around items-center gap-1 whitespace-nowrap">
                   {popularCategories.map((c) => (
-                    <div className='flex'>
+                    <div key={c.slug} className='flex'>
                       <Button
-                        key={c.slug}
                         size="sm"
                         variant="ghost"
                         onClick={() => {

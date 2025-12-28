@@ -141,18 +141,30 @@ export function useListingFilters({ sp, setSp, locale } = {}) {
     if (!sp || !setSp) return;
     const next = new URLSearchParams(sp);
 
+    const prevVal = next.get(key) || '';
+    const nextVal = value ? String(value) : '';
+
     if (key === 'category') {
-      const prev = next.get('category') || '';
-      const nextVal = value ? String(value) : '';
-      if (prev !== nextVal) {
+      if (prevVal !== nextVal) {
         for (const k of Array.from(next.keys())) {
           if (String(k).startsWith('attr_')) next.delete(k);
         }
       }
     }
 
-    if (!value) next.delete(key);
-    else next.set(key, String(value));
+    // Keep location params consistent.
+    // IMPORTANT: do it here to avoid callers making multiple sequential setParam calls
+    // that each start from the old `sp` value.
+    if (key === 'governorate' && prevVal !== nextVal) {
+      next.delete('city');
+      next.delete('neighborhood');
+    }
+    if (key === 'city' && prevVal !== nextVal) {
+      next.delete('neighborhood');
+    }
+
+    if (!nextVal) next.delete(key);
+    else next.set(key, nextVal);
     if (key !== 'page') next.set('page', '1');
     setSp(next);
   }
