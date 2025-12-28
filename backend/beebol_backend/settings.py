@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "reports",
     # classifieds domain app (local editable install from backend/)
     "django_classified",
+    "storages",
 ]
 
 SITE_ID = 1
@@ -105,6 +106,17 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+DEFAULT_FILE_STORAGE = 'storages.backends.gcloud.GoogleCloudStorage'
+GS_BUCKET_NAME = 'beebol_images_bucket'
+GS_CREDENTIALS = None
+
+from google.oauth2 import service_account
+GS_CREDENTIALS = service_account.Credentials.from_service_account_file(
+    os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+)
+
+MEDIA_URL = f'https://storage.googleapis.com/{GS_BUCKET_NAME}/' if not DEBUG else "/media/"
+
 WEB_ORIGIN = env("WEB_ORIGIN", default="")
 if WEB_ORIGIN:
     CORS_ALLOWED_ORIGINS = [WEB_ORIGIN]
@@ -135,5 +147,3 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 20,
 }
 
-MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"

@@ -9,3 +9,7 @@ djangorestframework-simplejwt==5.3.1
 
 # Filtering
 django-filter==25.1
+
+
+django-storages
+google-cloud-storage
