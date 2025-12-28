@@ -373,7 +373,23 @@ export function CreateListingPage() {
         // Spec defaults (docs/Categories.md)
         if (next.show_phone == null) next.show_phone = 'true';
         if (next.price_on_inquiry == null) next.price_on_inquiry = 'false';
-        if (next.deal_type == null) next.deal_type = 'sale';
+
+        // Only set deal_type for vehicles or real estate categories
+        let shouldSetDealType = false;
+        if (category && cats && cats.length > 0) {
+          const catIdxLocal = buildCategoryIndex(cats);
+          const pathIds = catIdxLocal.pathToRoot(String(category));
+          const slugs = pathIds.map((id) => {
+            const node = catIdxLocal.byId.get(String(id));
+            return node ? String(node.slug || '') : '';
+          });
+          if (slugs.includes('vehicles') || slugs.includes('real-estate')) {
+            shouldSetDealType = true;
+          }
+        }
+        if (shouldSetDealType && next.deal_type == null) next.deal_type = 'sale';
+        // If not in vehicles/real-estate, remove deal_type if present
+        if (!shouldSetDealType && next.deal_type != null) delete next.deal_type;
 
         return next;
       });
@@ -385,7 +401,7 @@ export function CreateListingPage() {
     return () => {
       cancelled = true;
     };
-  }, [category]);
+  }, [category, cats]);
 
   async function createAndUpload() {
     setBusy(true);
@@ -407,6 +423,22 @@ export function CreateListingPage() {
         }
       }
 
+      // Only include deal_type in attributes if category is under vehicles or real-estate
+      let filteredAttributes = { ...attributes };
+      if (category && cats && cats.length > 0) {
+        const catIdxLocal = buildCategoryIndex(cats);
+        const pathIds = catIdxLocal.pathToRoot(String(category));
+        const slugs = pathIds.map((id) => {
+          const node = catIdxLocal.byId.get(String(id));
+          return node ? String(node.slug || '') : '';
+        });
+        if (!(slugs.includes('vehicles') || slugs.includes('real-estate'))) {
+          // Remove deal_type if present
+          if ('deal_type' in filteredAttributes) {
+            delete filteredAttributes.deal_type;
+          }
+        }
+      }
       const payload = {
         title,
         description,
@@ -419,7 +451,7 @@ export function CreateListingPage() {
         neighborhood: neighborhood ? Number(neighborhood) : null,
         latitude: String(latitude || '').trim() ? String(latitude).trim() : null,
         longitude: String(longitude || '').trim() ? String(longitude).trim() : null,
-        attributes,
+        attributes: filteredAttributes,
       };
       const created = await api.createListing(payload);
 
