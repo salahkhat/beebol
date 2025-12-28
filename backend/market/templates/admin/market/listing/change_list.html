@@ -1,0 +1,17 @@
+{% extends "admin/change_list.html" %}
+
+{% block object-tools-items %}
+  {{ block.super }}
+  <li>
+    <form action="{% url 'admin:market_listing_seed' %}" method="post">
+      {% csrf_token %}
+      <button type="submit" class="button">Seed listings</button>
+    </form>
+  </li>
+  <li>
+    <form action="{% url 'admin:market_listing_clear' %}" method="post">
+      {% csrf_token %}
+      <button type="submit" class="button">Clear listings</button>
+    </form>
+  </li>
+{% endblock %}

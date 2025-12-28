@@ -76,7 +76,7 @@ export function AppLayout() {
   }
 
   const popularSlugs = useMemo(
-    () => ['cars', 'phones', 'electronics', 'furniture', 'motorcycles', 'fashion', 'kids'],
+    () => ['mobile-phones', 'cars', 'apartment', 'womens-clothing', 'motorcycles', 'kids'],
     [],
   );
 
@@ -144,7 +144,8 @@ export function AppLayout() {
   const navControl = (
     <SegmentedControl.Root
       value={currentTab}
-      style={{ borderRadius: 'var(--radius-thumb)' }}
+      variant='classic'
+      radius='full'
       onValueChange={(next) => {
         const item = navByValue.get(next);
         if (item) navigate(item.to);
@@ -445,19 +446,21 @@ export function AppLayout() {
                 onPick={(id) => goToCategory(id)}
               />
 
-              <div className="min-w-0 flex-1 overflow-x-auto">
-                <div className="flex items-center gap-1 whitespace-nowrap">
+              <div className="flex-1">
+                <div className="flex justify-around items-center gap-1 whitespace-nowrap">
                   {popularCategories.map((c) => (
-                    <Button
-                      key={c.slug}
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        goToCategory(c.id);
-                      }}
-                    >
-                      {c.label}
-                    </Button>
+                    <div className='flex'>
+                      <Button
+                        key={c.slug}
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          goToCategory(c.id);
+                        }}
+                        >
+                        {c.label}
+                      </Button>
+                    </div>
                   ))}
                 </div>
               </div>

@@ -30,8 +30,7 @@ export function ListingsFiltersSidebar({
 
   return (
     <Card>
-      <CardBody>
-        <Flex direction="column" gap="3" className={filtersWrapClass}>
+        <Flex direction="column" gap="3" >
           <Box className={filterSectionClass}>
             <Flex direction="column" gap="3">
               <Box>
@@ -278,7 +277,6 @@ export function ListingsFiltersSidebar({
             </Box>
           ) : null}
         </Flex>
-      </CardBody>
     </Card>
   );
 }

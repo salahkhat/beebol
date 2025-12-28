@@ -1,4 +1,8 @@
-from django.contrib import admin
+from django.contrib import admin, messages
+from django.core.management import call_command
+from django.http import HttpResponseNotAllowed
+from django.shortcuts import redirect
+from django.urls import path
 
 from .models import (
     Category,
@@ -46,6 +50,8 @@ class ListingImageInline(admin.TabularInline):
 
 @admin.register(Listing)
 class ListingAdmin(admin.ModelAdmin):
+    change_list_template = "admin/market/listing/change_list.html"
+
     list_display = (
         "id",
         "title",
@@ -93,6 +99,48 @@ class ListingAdmin(admin.ModelAdmin):
     @admin.action(description="Unflag selected listings")
     def unflag(self, request, queryset):
         queryset.update(is_flagged=False)
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "seed/",
+                self.admin_site.admin_view(self.seed_listings_view),
+                name="market_listing_seed",
+            ),
+            path(
+                "clear/",
+                self.admin_site.admin_view(self.clear_listings_view),
+                name="market_listing_clear",
+            ),
+        ]
+        return custom_urls + urls
+
+    def seed_listings_view(self, request):
+        if request.method != "POST":
+            return HttpResponseNotAllowed(["POST"])
+        if not self.has_add_permission(request):
+            self.message_user(request, "You do not have permission to seed listings.", level=messages.ERROR)
+            return redirect("..")
+
+        try:
+            call_command("seed_listings", per_category=15)
+            self.message_user(request, "Seeded listings: 15 per category.", level=messages.SUCCESS)
+        except Exception as exc:  # noqa: BLE001 - show error in admin UI
+            self.message_user(request, f"Seeding failed: {exc}", level=messages.ERROR)
+
+        return redirect("..")
+
+    def clear_listings_view(self, request):
+        if request.method != "POST":
+            return HttpResponseNotAllowed(["POST"])
+        if not self.has_delete_permission(request):
+            self.message_user(request, "You do not have permission to clear listings.", level=messages.ERROR)
+            return redirect("..")
+
+        deleted_count, _by_model = Listing.objects.all().delete()
+        self.message_user(request, f"Cleared {deleted_count} objects (including related data).", level=messages.SUCCESS)
+        return redirect("..")
 
 
 @admin.register(CategoryAttributeDefinition)

@@ -88,6 +88,15 @@ def _pick_location(rnd: random.Random) -> tuple[Governorate, City, Neighborhood 
     return gov, city, neighborhood
 
 
+def _pick_syria_lat_lng(rnd: random.Random) -> tuple[Decimal, Decimal]:
+    # Rough Syria bounding box.
+    # Latitude: 32.3 .. 37.3
+    # Longitude: 35.7 .. 42.4
+    lat = Decimal(str(rnd.uniform(32.3, 37.3))).quantize(Decimal("0.000001"))
+    lng = Decimal(str(rnd.uniform(35.7, 42.4))).quantize(Decimal("0.000001"))
+    return lat, lng
+
+
 def _gen_attr_value(defn: CategoryAttributeDefinition, rnd: random.Random):
     key = str(defn.key or "").strip().lower()
     t = defn.type
@@ -223,7 +232,7 @@ class Command(BaseCommand):
     help = "Seed lots of listings across all leaf categories (optionally with images + attribute values)."
 
     def add_arguments(self, parser):
-        parser.add_argument("--per-category", type=int, default=2, help="Listings per leaf category (default: 2)")
+        parser.add_argument("--per-category", type=int, default=15, help="Listings per leaf category (default: 15)")
         parser.add_argument("--max-categories", type=int, default=0, help="Limit number of categories (0 = all)")
         parser.add_argument("--sellers", type=int, default=4, help="Number of seed sellers to create/use")
         parser.add_argument("--seed", type=int, default=1337, help="RNG seed")
@@ -329,6 +338,7 @@ class Command(BaseCommand):
                     title = f"{adj} {base_name} #{n:02d}"
 
                     gov, city, neighborhood = _pick_location(rnd)
+                    lat, lng = _pick_syria_lat_lng(rnd)
 
                     # Defaults for a newly created listing; existing ones get updated lightly.
                     defaults = {
@@ -339,6 +349,8 @@ class Command(BaseCommand):
                         "governorate": gov,
                         "city": city,
                         "neighborhood": neighborhood,
+                        "latitude": lat,
+                        "longitude": lng,
                         "status": status_choice,
                         "moderation_status": moderation_choice,
                         "is_flagged": False,
