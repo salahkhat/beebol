@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import os
 import random
+import time
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -233,7 +234,7 @@ class Command(BaseCommand):
     help = "Seed lots of listings across all leaf categories (optionally with images + attribute values)."
 
     def add_arguments(self, parser):
-        parser.add_argument("--per-category", type=int, default=15, help="Listings per leaf category (default: 15)")
+        parser.add_argument("--per-category", type=int, default=2, help="Listings per leaf category (default: 2)")
         parser.add_argument("--max-categories", type=int, default=0, help="Limit number of categories (0 = all)")
         parser.add_argument("--sellers", type=int, default=4, help="Number of seed sellers to create/use")
         parser.add_argument("--seed", type=int, default=1337, help="RNG seed")
@@ -260,6 +261,12 @@ class Command(BaseCommand):
             choices=["pending", "approved", "rejected"],
             help="Moderation status for seeded listings (default: approved)",
         )
+        parser.add_argument(
+            "--sleep-seconds",
+            type=float,
+            default=2.0,
+            help="Sleep between DB-heavy operations (default: 2). Useful on small servers.",
+        )
 
     def handle(self, *args, **options):
         if not is_admin_seeding_enabled():
@@ -272,6 +279,7 @@ class Command(BaseCommand):
         images_per_listing = max(0, int(options.get("images_per_listing") or 1))
         no_images = bool(options.get("no_images"))
         no_attributes = bool(options.get("no_attributes"))
+        sleep_seconds = float(options.get("sleep_seconds") or 2.0)
 
         status = str(options.get("status") or "published")
         moderation = str(options.get("moderation") or "approved")
@@ -308,6 +316,9 @@ class Command(BaseCommand):
                     u.save(update_fields=["password"])
                 counts.inc("created" if created else "skipped", "users")
                 seller_users.append(u)
+
+        if sleep_seconds > 0:
+            time.sleep(sleep_seconds)
 
             # Leaf categories (cover everything the UI can post to)
             all_cats = list(Category.objects.all().order_by("slug"))
@@ -459,8 +470,14 @@ class Command(BaseCommand):
                                     sort_order=img_i,
                                 )
                                 counts.inc("created", "images")
+
+                            if sleep_seconds > 0:
+                                time.sleep(sleep_seconds)
                     else:
                         counts.inc("skipped", "images")
+
+                    if sleep_seconds > 0:
+                        time.sleep(sleep_seconds)
 
         self.stdout.write(self.style.SUCCESS("Listing seeding complete"))
         self.stdout.write(f"MEDIA_ROOT: {getattr(settings, 'MEDIA_ROOT', None)}")

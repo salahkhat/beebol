@@ -194,11 +194,7 @@ def listing_image_upload_to(instance: "ListingImage", filename: str) -> str:
 
 class ListingImage(TimestampedModel):
     listing = models.ForeignKey(Listing, on_delete=models.CASCADE, related_name="images")
-    from django.conf import settings
-    from django.utils.module_loading import import_string
-    # Dynamically get the default storage class from settings
-    storage_class = import_string(getattr(settings, 'DEFAULT_FILE_STORAGE', 'django.core.files.storage.FileSystemStorage'))
-    image = models.ImageField(upload_to=listing_image_upload_to, storage=storage_class())
+    image = models.ImageField(upload_to=listing_image_upload_to)
     alt_text = models.CharField(max_length=140, blank=True)
     sort_order = models.PositiveIntegerField(default=0)
 
@@ -207,6 +203,39 @@ class ListingImage(TimestampedModel):
 
     def __str__(self) -> str:
         return f"ListingImage({self.listing_id})"
+
+
+class AdminSeedJobStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    RUNNING = "running", "Running"
+    SUCCEEDED = "succeeded", "Succeeded"
+    FAILED = "failed", "Failed"
+
+
+class AdminSeedJob(TimestampedModel):
+    scenario = models.CharField(max_length=64, default="demo")
+    options = models.JSONField(default=dict, blank=True)
+
+    status = models.CharField(
+        max_length=16,
+        choices=AdminSeedJobStatus.choices,
+        default=AdminSeedJobStatus.PENDING,
+    )
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="admin_seed_jobs",
+    )
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    result = models.JSONField(null=True, blank=True)
+    output = models.TextField(blank=True, default="")
+    error = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
 
 
 class CategoryAttributeType(models.TextChoices):

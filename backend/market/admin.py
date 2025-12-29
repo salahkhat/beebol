@@ -1,3 +1,26 @@
+from django.contrib import admin
+from .models import AdminSeedJob, AdminSeedJobStatus
+# ...existing code...
+
+@admin.register(AdminSeedJob)
+class AdminSeedJobAdmin(admin.ModelAdmin):
+    list_display = ("id", "scenario", "status", "requested_by", "created_at", "started_at", "finished_at")
+    list_filter = ("status", "scenario")
+    search_fields = ("id", "scenario", "requested_by__username")
+    readonly_fields = ("created_at", "started_at", "finished_at", "result", "output", "error")
+    ordering = ("-created_at", "-id")
+
+    actions = ["enqueue_seed_listings_job"]
+
+    def enqueue_seed_listings_job(self, request, queryset):
+        for _ in queryset:
+            AdminSeedJob.objects.create(
+                scenario="seed_listings",
+                options={"per_category": 5, "images_per_listing": 1, "sleep_seconds": 0.3},
+                requested_by=request.user,
+            )
+        self.message_user(request, "Seed job(s) enqueued.")
+    enqueue_seed_listings_job.short_description = "Enqueue seed_listings job (slow, safe)"
 from django.contrib import admin, messages
 from django.core.management import call_command
 from django.http import HttpResponseNotAllowed

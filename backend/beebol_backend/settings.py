@@ -15,6 +15,9 @@ environ.Env.read_env(str(BASE_DIR / ".env"))
 SECRET_KEY = env("SECRET_KEY", default="dev")
 DEBUG = env.bool("DEBUG", default=True)
 
+# Media storage selection
+USE_GCS_MEDIA = env.bool("USE_GCS_MEDIA", default=not DEBUG)
+
 # Safety switch for admin-triggered data seeding.
 # Defaults to DEBUG to avoid accidental production usage.
 ADMIN_SEEDING_ENABLED = env.bool("ADMIN_SEEDING_ENABLED", default=DEBUG)
@@ -103,19 +106,34 @@ USE_TZ = True
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-DEFAULT_FILE_STORAGE = 'storages.backends.gcloud.GoogleCloudStorage'
-GS_BUCKET_NAME = 'beebol_images_bucket'
+# Django 4.2+ storage configuration (Django 5+ ignores DEFAULT_FILE_STORAGE).
+STORAGES = {
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+}
+
+GS_BUCKET_NAME = env("GS_BUCKET_NAME", default="beebol_images_bucket")
 GS_CREDENTIALS = None
 
-from google.oauth2 import service_account
-GS_CREDENTIALS = service_account.Credentials.from_service_account_file(
-    os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
-)
+if USE_GCS_MEDIA:
+    STORAGES["default"] = {"BACKEND": "storages.backends.gcloud.GoogleCloudStorage"}
 
-MEDIA_URL = f'https://storage.googleapis.com/{GS_BUCKET_NAME}/' if not DEBUG else "/media/"
+    from google.oauth2 import service_account
+
+    creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    if creds_path:
+        GS_CREDENTIALS = service_account.Credentials.from_service_account_file(creds_path)
+
+    MEDIA_URL = f"https://storage.googleapis.com/{GS_BUCKET_NAME}/"
+else:
+    MEDIA_URL = "/media/"
+    MEDIA_ROOT = BASE_DIR / "media"
 
 WEB_ORIGIN = env("WEB_ORIGIN", default="")
 if WEB_ORIGIN:

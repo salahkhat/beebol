@@ -32,6 +32,30 @@ services:
       - key: WEB_ORIGIN
         value: https://beebol.onrender.com
 
+  - type: worker
+    name: beebol-seed-worker
+    env: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements-prod.txt
+    startCommand: python manage.py run_seed_jobs
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        fromService:
+          name: beebol-backend
+          type: web
+          envVarKey: SECRET_KEY
+      - key: DATABASE_URL
+        fromDatabase:
+          name: beebol-db
+          property: connectionString
+      - key: WEB_ORIGIN
+        value: https://beebol.onrender.com
+
   - type: static
     name: beebol
     plan: free

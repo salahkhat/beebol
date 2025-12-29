@@ -20,6 +20,7 @@ from market.models import (
     ModerationStatus,
     Neighborhood,
     ListingStatus,
+    AdminSeedJob,
 )
 from messaging.models import PrivateMessage, PrivateThread, PublicQuestion
 from reports.models import ListingReport, ReportStatus
@@ -94,12 +95,43 @@ class AdminSeedView(APIView):
         if not isinstance(options, dict):
             return Response({"detail": "options must be an object."}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            result = run_admin_seed(scenario=scenario, options=options)
-        except ValueError as e:
-            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        job = AdminSeedJob.objects.create(
+            scenario=str(scenario or "demo"),
+            options=options,
+            requested_by=request.user,
+        )
 
-        return Response(result.as_dict(), status=status.HTTP_200_OK)
+        return Response(
+            {"id": job.id, "status": job.status, "scenario": job.scenario, "created_at": job.created_at},
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+
+class AdminSeedJobView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, job_id: int):
+        if not getattr(request.user, "is_staff", False):
+            return Response({"detail": "Not allowed."}, status=status.HTTP_403_FORBIDDEN)
+
+        job = AdminSeedJob.objects.filter(id=job_id).first()
+        if not job:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response(
+            {
+                "id": job.id,
+                "status": job.status,
+                "scenario": job.scenario,
+                "options": job.options,
+                "created_at": job.created_at,
+                "started_at": job.started_at,
+                "finished_at": job.finished_at,
+                "result": job.result,
+                "output": job.output,
+                "error": job.error,
+            }
+        )
 
 
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):

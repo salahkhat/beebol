@@ -66,16 +66,12 @@ module.exports = {
     proxy: [
       {
         context: ['/api'],
-        target: 'https://127.0.0.1:8000',
+        target: 'http://127.0.0.1:8000',
         secure: false,
       },
     ],
     server: {
-      type: 'https',
-      options: {
-        key: path.resolve(__dirname, '../backend/key.pem'),
-        cert: path.resolve(__dirname, '../backend/cert.pem'),
-      },
+      type: 'http'
     },
   },
 };

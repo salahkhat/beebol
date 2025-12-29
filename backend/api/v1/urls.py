@@ -4,6 +4,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .views import (
     AdminSeedView,
+    AdminSeedJobView,
     CategoryViewSet,
     CityViewSet,
     GovernorateViewSet,
@@ -30,6 +31,7 @@ router.register(r"reports", ListingReportViewSet, basename="report")
 urlpatterns = [
     path("health/", HealthView.as_view(), name="v1-health"),
     path("admin/seed/", AdminSeedView.as_view(), name="v1-admin-seed"),
+    path("admin/seed/jobs/<int:job_id>/", AdminSeedJobView.as_view(), name="v1-admin-seed-job"),
     path("auth/register/", RegisterView.as_view(), name="v1-register"),
     path("auth/token/", TokenObtainPairView.as_view(), name="v1-token-obtain-pair"),
     path("auth/token/refresh/", TokenRefreshView.as_view(), name="v1-token-refresh"),
