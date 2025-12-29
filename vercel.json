@@ -3,8 +3,7 @@
   "builds": [
     {
       "src": "web/package.json",
-      "use": "@vercel/static-build",
-      "config": { "distDir": "web/dist" }
+      "use": "@vercel/static-build"
     },
     {
       "src": "backend/wsgi.py",
@@ -12,6 +11,7 @@
       "config": { "maxLambdaSize": "50mb" }
     }
   ],
+  "outputDirectory": "web/dist",
   "routes": [
     {
       "src": "/api/(.*)",
