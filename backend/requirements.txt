@@ -12,4 +12,4 @@ django-filter==25.1
 
 django-storages
 google-cloud-storage
-vercel-wsgi
+wsgi-adapter
