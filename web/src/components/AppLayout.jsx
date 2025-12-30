@@ -225,8 +225,21 @@ export function AppLayout() {
                 </Link>
               </RTLink>
 
-              {/* Mobile hamburger - visible only below sm */}
-              <div className="sm:hidden">
+              {/* Mobile categories + hamburger - visible only below sm */}
+              <div className="sm:hidden flex items-center gap-2">
+                <CategoryMegaMenu
+                  categories={categories}
+                  locale={locale}
+                  dir={dir}
+                  t={t}
+                  label={t('all_categories')}
+                  loading={!categoriesError && (!categories || categories.length === 0)}
+                  error={categoriesError}
+                  onPick={(id) => {
+                    goToCategory(id);
+                  }}
+                />
+
                 <Button variant="secondary" size="sm" onClick={() => setDrawerOpen(true)} aria-label={t('menu')}> 
                   <Icon icon={Menu} size={16} />
                 </Button>
@@ -579,21 +592,7 @@ export function AppLayout() {
               )}
             </div>
 
-            <div className="mt-4 border-t border-[var(--gray-a5)] pt-4">
-              <CategoryMegaMenu
-                categories={categories}
-                locale={locale}
-                dir={dir}
-                t={t}
-                label={t('all_categories')}
-                loading={!categoriesError && (!categories || categories.length === 0)}
-                error={categoriesError}
-                onPick={(id) => {
-                  goToCategory(id);
-                  setDrawerOpen(false);
-                }}
-              />
-            </div>
+
           </div>
         </div>
       ) : null}
