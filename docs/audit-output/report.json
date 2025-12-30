@@ -1,0 +1,351 @@
+[
+  {
+    "path": "/",
+    "results": [
+      {
+        "viewport": "mobile",
+        "width": 360,
+        "height": 800,
+        "url": "http://localhost:3000/",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 360,
+        "innerWidth": 360,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\home\\mobile-360x800.png"
+      },
+      {
+        "viewport": "tablet",
+        "width": 768,
+        "height": 1024,
+        "url": "http://localhost:3000/",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 768,
+        "innerWidth": 768,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\home\\tablet-768x1024.png"
+      },
+      {
+        "viewport": "desktop",
+        "width": 1280,
+        "height": 800,
+        "url": "http://localhost:3000/",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 1280,
+        "innerWidth": 1280,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\home\\desktop-1280x800.png"
+      }
+    ]
+  },
+  {
+    "path": "/listings",
+    "results": [
+      {
+        "viewport": "mobile",
+        "width": 360,
+        "height": 800,
+        "url": "http://localhost:3000/listings",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 360,
+        "innerWidth": 360,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\listings\\mobile-360x800.png"
+      },
+      {
+        "viewport": "tablet",
+        "width": 768,
+        "height": 1024,
+        "url": "http://localhost:3000/listings",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 768,
+        "innerWidth": 768,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\listings\\tablet-768x1024.png"
+      },
+      {
+        "viewport": "desktop",
+        "width": 1280,
+        "height": 800,
+        "url": "http://localhost:3000/listings",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 1280,
+        "innerWidth": 1280,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\listings\\desktop-1280x800.png"
+      }
+    ]
+  },
+  {
+    "path": "/map",
+    "results": [
+      {
+        "viewport": "mobile",
+        "width": 360,
+        "height": 800,
+        "url": "http://localhost:3000/map",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 360,
+        "innerWidth": 360,
+        "offenders": [
+          {
+            "tag": "svg",
+            "className": "[object SVGAnimatedString]",
+            "width": 362,
+            "html": "<svg pointer-events=\"none\" class=\"leaflet-zoom-animated\" width=\"362\" height=\"624\" viewBox=\"-30 -52 362 624\" style=\"transform: translate3d(-30px, -52px, 0px);\"><g><path class=\"leaflet-interactive\" stroke=\"var(--accent-9)\" stroke-opacity=\"1\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"rou"
+          }
+        ],
+        "screenshot": "..\\audit-output\\screenshots\\map\\mobile-360x800.png"
+      },
+      {
+        "viewport": "tablet",
+        "width": 768,
+        "height": 1024,
+        "url": "http://localhost:3000/map",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 768,
+        "innerWidth": 768,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\map\\tablet-768x1024.png"
+      },
+      {
+        "viewport": "desktop",
+        "width": 1280,
+        "height": 800,
+        "url": "http://localhost:3000/map",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 1280,
+        "innerWidth": 1280,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\map\\desktop-1280x800.png"
+      }
+    ]
+  },
+  {
+    "path": "/compare",
+    "results": [
+      {
+        "viewport": "mobile",
+        "width": 360,
+        "height": 800,
+        "url": "http://localhost:3000/compare",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 360,
+        "innerWidth": 360,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\compare\\mobile-360x800.png"
+      },
+      {
+        "viewport": "tablet",
+        "width": 768,
+        "height": 1024,
+        "url": "http://localhost:3000/compare",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 768,
+        "innerWidth": 768,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\compare\\tablet-768x1024.png"
+      },
+      {
+        "viewport": "desktop",
+        "width": 1280,
+        "height": 800,
+        "url": "http://localhost:3000/compare",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 1280,
+        "innerWidth": 1280,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\compare\\desktop-1280x800.png"
+      }
+    ]
+  },
+  {
+    "path": "/login",
+    "results": [
+      {
+        "viewport": "mobile",
+        "width": 360,
+        "height": 800,
+        "url": "http://localhost:3000/login",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 360,
+        "innerWidth": 360,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\login\\mobile-360x800.png"
+      },
+      {
+        "viewport": "tablet",
+        "width": 768,
+        "height": 1024,
+        "url": "http://localhost:3000/login",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 768,
+        "innerWidth": 768,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\login\\tablet-768x1024.png"
+      },
+      {
+        "viewport": "desktop",
+        "width": 1280,
+        "height": 800,
+        "url": "http://localhost:3000/login",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 1280,
+        "innerWidth": 1280,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\login\\desktop-1280x800.png"
+      }
+    ]
+  },
+  {
+    "path": "/register",
+    "results": [
+      {
+        "viewport": "mobile",
+        "width": 360,
+        "height": 800,
+        "url": "http://localhost:3000/register",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 360,
+        "innerWidth": 360,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\register\\mobile-360x800.png"
+      },
+      {
+        "viewport": "tablet",
+        "width": 768,
+        "height": 1024,
+        "url": "http://localhost:3000/register",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 768,
+        "innerWidth": 768,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\register\\tablet-768x1024.png"
+      },
+      {
+        "viewport": "desktop",
+        "width": 1280,
+        "height": 800,
+        "url": "http://localhost:3000/register",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 1280,
+        "innerWidth": 1280,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\register\\desktop-1280x800.png"
+      }
+    ]
+  },
+  {
+    "path": "/create",
+    "results": [
+      {
+        "viewport": "mobile",
+        "width": 360,
+        "height": 800,
+        "url": "http://localhost:3000/create",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 360,
+        "innerWidth": 360,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\create\\mobile-360x800.png"
+      },
+      {
+        "viewport": "tablet",
+        "width": 768,
+        "height": 1024,
+        "url": "http://localhost:3000/create",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 768,
+        "innerWidth": 768,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\create\\tablet-768x1024.png"
+      },
+      {
+        "viewport": "desktop",
+        "width": 1280,
+        "height": 800,
+        "url": "http://localhost:3000/create",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 1280,
+        "innerWidth": 1280,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\create\\desktop-1280x800.png"
+      }
+    ]
+  },
+  {
+    "path": "/watchlist",
+    "results": [
+      {
+        "viewport": "mobile",
+        "width": 360,
+        "height": 800,
+        "url": "http://localhost:3000/watchlist",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 360,
+        "innerWidth": 360,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\watchlist\\mobile-360x800.png"
+      },
+      {
+        "viewport": "tablet",
+        "width": 768,
+        "height": 1024,
+        "url": "http://localhost:3000/watchlist",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 768,
+        "innerWidth": 768,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\watchlist\\tablet-768x1024.png"
+      },
+      {
+        "viewport": "desktop",
+        "width": 1280,
+        "height": 800,
+        "url": "http://localhost:3000/watchlist",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 1280,
+        "innerWidth": 1280,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\watchlist\\desktop-1280x800.png"
+      }
+    ]
+  },
+  {
+    "path": "/following",
+    "results": [
+      {
+        "viewport": "mobile",
+        "width": 360,
+        "height": 800,
+        "url": "http://localhost:3000/following",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 360,
+        "innerWidth": 360,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\following\\mobile-360x800.png"
+      },
+      {
+        "viewport": "tablet",
+        "width": 768,
+        "height": 1024,
+        "url": "http://localhost:3000/following",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 768,
+        "innerWidth": 768,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\following\\tablet-768x1024.png"
+      },
+      {
+        "viewport": "desktop",
+        "width": 1280,
+        "height": 800,
+        "url": "http://localhost:3000/following",
+        "hasHorizontalOverflow": false,
+        "scrollWidth": 1280,
+        "innerWidth": 1280,
+        "offenders": [],
+        "screenshot": "..\\audit-output\\screenshots\\following\\desktop-1280x800.png"
+      }
+    ]
+  }
+]

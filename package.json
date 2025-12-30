@@ -3,9 +3,11 @@
   "private": true,
   "scripts": {
     "dev": "concurrently -k -n backend,web -c blue,green \"powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/dev-backend.ps1\" \"npm --prefix web run dev\"",
-    "install:all": "npm install && npm --prefix web install"
+    "install:all": "npm install && npm --prefix web install",
+    "audit:mobile": "node tools/audit/run-audit.mjs"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "concurrently": "^9.2.1",
+    "playwright": "^1.40.0"
   }
 }

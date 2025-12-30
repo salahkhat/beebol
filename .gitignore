@@ -40,3 +40,5 @@ web/dist/
 .idea/
 .DS_Store
 Thumbs.db
+
+docs/audit-output/screenshots

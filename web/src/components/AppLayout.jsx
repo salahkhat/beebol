@@ -12,6 +12,11 @@ import {
   UserPlus,
   Menu,
   LogOut,
+  X,
+  Bookmark,
+  FileText,
+  Eye,
+  Users,
 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { Button } from '../ui/Button';
@@ -192,6 +197,16 @@ export function AppLayout() {
     };
   }, [navItems]);
 
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  useEffect(() => {
+    // prevent background scroll when drawer is open
+    document.body.style.overflow = drawerOpen ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [drawerOpen]);
+
   return (
     <div className="min-h-screen bg-[var(--gray-1)]">
       <a
@@ -202,7 +217,7 @@ export function AppLayout() {
       </a>
       <header className="sticky top-0 z-40 border-b border-[var(--gray-a5)] bg-[var(--color-panel-solid)]/90 backdrop-blur">
         <Container size="4">
-          <Flex align="center" justify="between" gap="3" py="2">
+          <Flex align="center" justify="between" gap="3" py="2" wrap="wrap">
             <Flex align="center" gap="3" minWidth="0" style={{ flex: 1 }}>
               <RTLink asChild highContrast underline="none">
                 <Link to="/listings">
@@ -210,10 +225,19 @@ export function AppLayout() {
                 </Link>
               </RTLink>
 
-              <div ref={navSlotRef} className="min-w-0 flex-1">
-                <div className={navCollapsed ? 'hidden' : 'block'}>{navControl}</div>
+              {/* Mobile hamburger - visible only below sm */}
+              <div className="sm:hidden">
+                <Button variant="secondary" size="sm" onClick={() => setDrawerOpen(true)} aria-label={t('menu')}> 
+                  <Icon icon={Menu} size={16} />
+                </Button>
+              </div>
 
-                <div className={navCollapsed ? 'block' : 'hidden'}>
+              <div ref={navSlotRef} className="min-w-0 flex-1">
+                {/* Show the segmented nav only when there's room AND on sm+ screens */}
+                <div className={navCollapsed ? 'hidden' : 'hidden sm:block'}>{navControl}</div>
+
+                {/* When collapsed on wider screens, show the dropdown; on small screens prefer the hamburger + drawer */}
+                <div className={navCollapsed ? 'hidden sm:block' : 'hidden'}>
                   <Dropdown
                     trigger={
                       <Button size="sm" variant="secondary">
@@ -257,7 +281,6 @@ export function AppLayout() {
                   </Dropdown>
                 </div>
               </div>
-
               <div
                 style={{
                   position: 'relative',
@@ -289,74 +312,67 @@ export function AppLayout() {
               </div>
             </Flex>
 
-            <Flex align="center" gap="2">
-              <LanguageSwitch />
-              <Button
-                variant="secondary"
-                onClick={toggle}
-                title={appearance === 'dark' ? t('theme_light') : t('theme_dark')}
-                aria-label={appearance === 'dark' ? t('theme_light') : t('theme_dark')}
-                className="px-2"
-              >
-                <Icon icon={appearance === 'dark' ? Sun : Moon} size={16} />
-              </Button>
-              {isAuthenticated ? (
-                <Dropdown
-                  trigger={
-                    <Button variant="secondary">
-                      <Flex align="center" gap="2">
-                        <Icon icon={User} size={16} />
-                        <Text as="span" size="2">
-                          {user?.username || t('account')}
-                        </Text>
-                      </Flex>
-                    </Button>
-                  }
+            <div className="hidden sm:block">
+              <Flex align="center" gap="2">
+                <LanguageSwitch />
+                <Button
+                  variant="secondary"
+                  onClick={toggle}
+                  title={appearance === 'dark' ? t('theme_light') : t('theme_dark')}
+                  aria-label={appearance === 'dark' ? t('theme_light') : t('theme_dark')}
+                  className="px-2"
                 >
-                  <DropdownItem asChild>
-                    <Link to="/my">
-                      <Flex align="center" gap="2">
-                        <Icon icon={User} size={16} />
-                        <Text as="span" size="2">
-                          {t('nav_my')}
-                        </Text>
-                      </Flex>
-                    </Link>
-                  </DropdownItem>
+                  <Icon icon={appearance === 'dark' ? Sun : Moon} size={16} />
+                </Button>
+                {isAuthenticated ? (
+                  <Dropdown
+                    trigger={
+                      <Button variant="secondary">
+                        <Flex align="center" gap="2">
+                          <Icon icon={User} size={16} />
+                          <Text as="span" size="2">
+                            {user?.username || t('account')}
+                          </Text>
+                        </Flex>
+                      </Button>
+                    }
+                  >
                   <DropdownItem asChild>
                     <Link to="/saved-searches">
-                      <Text as="span" size="2">
-                        {t('nav_saved_searches')}
-                      </Text>
+                      <Flex align="center" gap="2">
+                        <Icon icon={Bookmark} size={16} />
+                        <Text as="span" size="2">
+                          {t('nav_saved_searches')}
+                        </Text>
+                      </Flex>
                     </Link>
                   </DropdownItem>
                   <DropdownItem asChild>
                     <Link to="/reports">
-                      <Text as="span" size="2">
-                        {t('nav_reports')}
-                      </Text>
+                      <Flex align="center" gap="2">
+                        <Icon icon={FileText} size={16} />
+                        <Text as="span" size="2">
+                          {t('nav_reports')}
+                        </Text>
+                      </Flex>
                     </Link>
                   </DropdownItem>
                   <DropdownItem asChild>
                     <Link to="/watchlist">
-                      <Text as="span" size="2">
-                        {t('nav_watchlist')}
-                      </Text>
+                      <Flex align="center" gap="2">
+                        <Icon icon={Eye} size={16} />
+                        <Text as="span" size="2">
+                          {t('nav_watchlist')}
+                        </Text>
+                      </Flex>
                     </Link>
                   </DropdownItem>
                   <DropdownItem asChild>
                     <Link to="/following">
-                      <Text as="span" size="2">
-                        {t('nav_following')}
-                      </Text>
-                    </Link>
-                  </DropdownItem>
-                  <DropdownItem asChild>
-                    <Link to="/create">
                       <Flex align="center" gap="2">
-                        <Icon icon={PlusCircle} size={16} />
+                        <Icon icon={Users} size={16} />
                         <Text as="span" size="2">
-                          {t('nav_create')}
+                          {t('nav_following')}
                         </Text>
                       </Flex>
                     </Link>
@@ -429,24 +445,27 @@ export function AppLayout() {
                 </>
               )}
             </Flex>
-          </Flex>
+          </div>
+        </Flex>
         </Container>
 
         <div className="border-t border-[var(--gray-a5)]">
           <Container size="4">
             <div className="flex items-center gap-2 py-2">
-              <CategoryMegaMenu
-                categories={categories}
-                locale={locale}
-                dir={dir}
-                t={t}
-                label={t('all_categories')}
-                loading={!categoriesError && (!categories || categories.length === 0)}
-                error={categoriesError}
-                onPick={(id) => goToCategory(id)}
-              />
+              <div className="hidden sm:block">
+                <CategoryMegaMenu
+                  categories={categories}
+                  locale={locale}
+                  dir={dir}
+                  t={t}
+                  label={t('all_categories')}
+                  loading={!categoriesError && (!categories || categories.length === 0)}
+                  error={categoriesError}
+                  onPick={(id) => goToCategory(id)}
+                />
+              </div>
 
-              <div className="flex-1">
+              <div className="hidden sm:flex-1">
                 <div className="flex justify-around items-center gap-1 whitespace-nowrap">
                   {popularCategories.map((c) => (
                     <div key={c.slug} className='flex'>
@@ -463,10 +482,121 @@ export function AppLayout() {
                   ))}
                 </div>
               </div>
+
+
             </div>
           </Container>
         </div>
       </header>
+
+      {drawerOpen ? (
+        <div className="fixed inset-0 z-50 flex">
+          <div className="fixed inset-0 bg-black/40" onClick={() => setDrawerOpen(false)} />
+          <div className="relative bg-[var(--color-panel-solid)] w-80 max-w-[80%] h-full p-4 overflow-auto">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Text weight="bold">{t('appName')}</Text>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <LanguageSwitch />
+                <Button
+                  variant="secondary"
+                  onClick={toggle}
+                  title={appearance === 'dark' ? t('theme_light') : t('theme_dark')}
+                  aria-label={appearance === 'dark' ? t('theme_light') : t('theme_dark')}
+                  className="px-2"
+                >
+                  <Icon icon={appearance === 'dark' ? Sun : Moon} size={16} />
+                </Button>
+
+                <Button variant="secondary" size="sm" onClick={() => setDrawerOpen(false)} aria-label={t('menu')}> 
+                  <Icon icon={X} size={16} />
+                </Button>
+              </div>
+            </div>
+
+            <nav className="space-y-2">
+              {navItems.map((item) => (
+                <Link key={item.value} to={item.to} onClick={() => setDrawerOpen(false)} className="block">
+                  <Button variant="ghost" className="w-full text-left">
+                    <Flex align="center" gap="2">
+                      <Icon icon={item.icon} size={16} />
+                      <Text as="span" size="2">
+                        {item.label}
+                      </Text>
+                    </Flex>
+                  </Button>
+                </Link>
+              ))}
+            </nav>
+
+            <div className="mt-4 border-t border-[var(--gray-a5)] pt-4">
+              {isAuthenticated ? (
+                <div className="space-y-1">
+                  <Link to="/saved-searches" onClick={() => setDrawerOpen(false)} className="block">
+                    <button className="w-full flex items-center gap-3 p-3 rounded hover:bg-[var(--gray-a3)]">
+                      <Icon icon={Bookmark} size={18} />
+                      <span className="text-sm">{t('nav_saved_searches')}</span>
+                    </button>
+                  </Link>
+
+                  <Link to="/reports" onClick={() => setDrawerOpen(false)} className="block">
+                    <button className="w-full flex items-center gap-3 p-3 rounded hover:bg-[var(--gray-a3)]">
+                      <Icon icon={FileText} size={18} />
+                      <span className="text-sm">{t('nav_reports')}</span>
+                    </button>
+                  </Link>
+
+                  <Link to="/watchlist" onClick={() => setDrawerOpen(false)} className="block">
+                    <button className="w-full flex items-center gap-3 p-3 rounded hover:bg-[var(--gray-a3)]">
+                      <Icon icon={Eye} size={18} />
+                      <span className="text-sm">{t('nav_watchlist')}</span>
+                    </button>
+                  </Link>
+
+                  <Link to="/following" onClick={() => setDrawerOpen(false)} className="block">
+                    <button className="w-full flex items-center gap-3 p-3 rounded hover:bg-[var(--gray-a3)]">
+                      <Icon icon={Users} size={18} />
+                      <span className="text-sm">{t('nav_following')}</span>
+                    </button>
+                  </Link>
+
+                  <button className="w-full flex items-center gap-3 p-3 rounded hover:bg-[var(--gray-a3)]" onClick={(e) => { e.preventDefault(); logout(); setDrawerOpen(false); }}>
+                    <Icon icon={LogOut} size={18} />
+                    <span className="text-sm">{t('logout')}</span>
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <Link to="/login" onClick={() => setDrawerOpen(false)}>
+                    <Button variant="secondary" className="w-full">{t('login')}</Button>
+                  </Link>
+                  <Link to="/register" onClick={() => setDrawerOpen(false)}>
+                    <Button className="w-full">{t('register')}</Button>
+                  </Link>
+                </>
+              )}
+            </div>
+
+            <div className="mt-4 border-t border-[var(--gray-a5)] pt-4">
+              <CategoryMegaMenu
+                categories={categories}
+                locale={locale}
+                dir={dir}
+                t={t}
+                label={t('all_categories')}
+                loading={!categoriesError && (!categories || categories.length === 0)}
+                error={categoriesError}
+                onPick={(id) => {
+                  goToCategory(id);
+                  setDrawerOpen(false);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <main id="main" tabIndex={-1} className="focus:outline-none">
         <Container
