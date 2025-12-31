@@ -245,7 +245,7 @@ export function ListingsPage() {
                               }
                             />
                             <Flex direction="column" gap="1" style={{ minWidth: 0 }}>
-                              <Text weight="bold" size="2" style={{ wordBreak: 'break-word' }}>
+                              <Text weight="bold" size="2" className="break-words whitespace-normal">
                                 {rv.title || t('listing_number', { id: rv.id })}
                               </Text>
                               {rv.price != null ? (
@@ -390,8 +390,14 @@ export function ListingsPage() {
                 <Link to={`/listings/${r.id}`}>
                   <Card className="transition-colors hover:bg-[var(--gray-a2)]">
                     <Box p={{ initial: '2', sm: '3' }}>
-                      <Flex justify="between" gap="4" align="start" wrap="wrap">
-                        <Flex gap="3" align="start" style={{ minWidth: 0, flex: 1 }}>
+                      <Flex
+                        justify="between"
+                        gap="4"
+                        align="start"
+                        wrap="wrap"
+                        className="flex-col sm:flex-row"
+                      >
+                        <Flex gap="3" align="start" style={{ minWidth: 0, flex: 1 }} className="w-full sm:w-auto">
                           <ListingThumbnail
                             src={r.thumbnail}
                             alt={r.title || ''}
@@ -401,14 +407,14 @@ export function ListingsPage() {
                             onClick={r.thumbnail ? (e) => openImagePreview({ src: r.thumbnail, title: r.title }, e) : undefined}
                           />
 
-                          <Flex direction="column" gap="2" style={{ minWidth: 0 }}>
-                            <Text weight="bold" size="3" style={{ wordBreak: 'break-word' }}>
+                          <Flex direction="column" gap="2" style={{ minWidth: 0 }} className="flex-1">
+                            <Text weight="bold" size="3" className="break-words whitespace-normal">
                               {r.title}
                             </Text>
                             <Text size="2">{Number(r.price) === 0 ? t('price_free') : formatMoney(r.price, r.currency)}</Text>
                             <Flex align="center" gap="2" wrap="wrap">
                               <Icon icon={MapPin} size={14} className="text-[var(--gray-11)]" aria-label="" />
-                              <Text size="1" color="gray">
+                              <Text size="1" color="gray" className="break-words whitespace-normal">
                                 {r.governorate?.name_ar || r.governorate?.name_en} · {r.city?.name_ar || r.city?.name_en}
                                 {r.neighborhood ? ` · ${r.neighborhood?.name_ar || r.neighborhood?.name_en}` : ''}
                               </Text>
@@ -416,7 +422,12 @@ export function ListingsPage() {
                           </Flex>
                         </Flex>
 
-                        <Flex direction="column" gap="2" align="end">
+                        <Flex
+                          direction="column"
+                          gap="2"
+                          align="end"
+                          className="w-full sm:w-auto mt-3 sm:mt-0"
+                        >
                           <Flex align="center" gap="2" justify="end">
                             <Button
                               size="sm"
