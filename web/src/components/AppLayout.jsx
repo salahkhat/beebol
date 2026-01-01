@@ -37,6 +37,8 @@ export function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
 
+  const showCategoryNav = (location.pathname || '').startsWith('/listings');
+
   const [categories, setCategories] = useState([]);
   const [categoriesError, setCategoriesError] = useState('');
 
@@ -208,7 +210,7 @@ export function AppLayout() {
   }, [drawerOpen]);
 
   return (
-    <div className="min-h-screen bg-[var(--gray-1)]">
+    <div className="min-h-screen flex flex-col bg-[var(--gray-1)]">
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 rounded-lg border border-[var(--gray-a5)] bg-[var(--color-panel-solid)] px-3 py-2 text-sm"
@@ -227,18 +229,20 @@ export function AppLayout() {
 
               {/* Mobile categories + hamburger - visible only below sm */}
               <div className="sm:hidden flex items-center gap-2">
-                <CategoryMegaMenu
-                  categories={categories}
-                  locale={locale}
-                  dir={dir}
-                  t={t}
-                  label={t('all_categories')}
-                  loading={!categoriesError && (!categories || categories.length === 0)}
-                  error={categoriesError}
-                  onPick={(id) => {
-                    goToCategory(id);
-                  }}
-                />
+                {showCategoryNav ? (
+                  <CategoryMegaMenu
+                    categories={categories}
+                    locale={locale}
+                    dir={dir}
+                    t={t}
+                    label={t('all_categories')}
+                    loading={!categoriesError && (!categories || categories.length === 0)}
+                    error={categoriesError}
+                    onPick={(id) => {
+                      goToCategory(id);
+                    }}
+                  />
+                ) : null}
 
                 <Button variant="secondary" size="sm" onClick={() => setDrawerOpen(true)} aria-label={t('menu')}> 
                   <Icon icon={Menu} size={16} />
@@ -474,44 +478,44 @@ export function AppLayout() {
         </Flex>
         </Container>
 
-        <div className="border-t border-[var(--gray-a5)]">
-          <Container size="4">
-            <div className="flex items-center gap-2 py-2">
-              <div className="hidden sm:block">
-                <CategoryMegaMenu
-                  categories={categories}
-                  locale={locale}
-                  dir={dir}
-                  t={t}
-                  label={t('all_categories')}
-                  loading={!categoriesError && (!categories || categories.length === 0)}
-                  error={categoriesError}
-                  onPick={(id) => goToCategory(id)}
-                />
-              </div>
+        {showCategoryNav ? (
+          <div className="border-t border-[var(--gray-a5)]">
+            <Container size="4">
+              <div className="flex items-center gap-2 py-2">
+                <div className="hidden sm:block">
+                  <CategoryMegaMenu
+                    categories={categories}
+                    locale={locale}
+                    dir={dir}
+                    t={t}
+                    label={t('all_categories')}
+                    loading={!categoriesError && (!categories || categories.length === 0)}
+                    error={categoriesError}
+                    onPick={(id) => goToCategory(id)}
+                  />
+                </div>
 
-              <div className="hidden sm:flex-1">
-                <div className="flex justify-around items-center gap-1 whitespace-nowrap">
-                  {popularCategories.map((c) => (
-                    <div key={c.slug} className='flex'>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          goToCategory(c.id);
-                        }}
-                        >
-                        {c.label}
-                      </Button>
-                    </div>
-                  ))}
+                <div className="hidden sm:flex-1">
+                  <div className="flex justify-around items-center gap-1 whitespace-nowrap">
+                    {popularCategories.map((c) => (
+                      <div key={c.slug} className='flex'>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            goToCategory(c.id);
+                          }}
+                          >
+                          {c.label}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
-
-
-            </div>
-          </Container>
-        </div>
+            </Container>
+          </div>
+        ) : null}
       </header>
 
       {drawerOpen ? (
@@ -617,7 +621,7 @@ export function AppLayout() {
         </div>
       ) : null}
 
-      <main id="main" tabIndex={-1} className="focus:outline-none">
+      <main id="main" tabIndex={-1} className="focus:outline-none flex-1">
         <Container
           size="4"
           py={{ initial: '4', sm: '5' }}
