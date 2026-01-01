@@ -65,14 +65,38 @@ export function WatchlistPage() {
       setLoading(true);
       setError(null);
       try {
-        const results = await Promise.allSettled(ids.map((id) => api.listing(id, { auth: isAuthenticated })));
+        const results = await Promise.all(
+          ids.map(async (id) => {
+            try {
+              const value = await api.listing(id, { auth: isAuthenticated });
+              return { ok: true, id, value };
+            } catch (e) {
+              return { ok: false, id, error: e };
+            }
+          }),
+        );
         if (cancelled) return;
         const ok = [];
         const failed = [];
+        const staleIds = [];
         for (const r of results) {
-          if (r.status === 'fulfilled') ok.push(r.value);
-          else failed.push(r.reason);
+          if (r.ok) ok.push(r.value);
+          else {
+            const err = r.error;
+            // A watched listing can be deleted or become unavailable; auto-cleanup stale IDs.
+            if (err instanceof ApiError && err.status === 404) {
+              staleIds.push(r.id);
+              continue;
+            }
+            failed.push(err);
+          }
         }
+
+        if (staleIds.length) {
+          for (const id of staleIds) removeWatch(id);
+          setWatchItems(listWatchlist());
+        }
+
         setItems(ok);
         setError(failed.length ? failed[0] : null);
       } finally {
