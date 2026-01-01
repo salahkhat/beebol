@@ -42,3 +42,4 @@ web/dist/
 Thumbs.db
 
 docs/audit-output/screenshots
+.playwright-temp

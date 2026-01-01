@@ -21,7 +21,8 @@ export function Select({ className, children, value, onChange, disabled, onBlur,
   const placeholder = opts.find((o) => o.value === '')?.label;
   const items = opts.filter((o) => o.value !== '');
 
-  const rtValue = value ? String(value) : undefined;
+  const hasPlaceholder = Boolean(placeholder);
+  const rtValue = value === '' || value == null ? (hasPlaceholder ? EMPTY_VALUE : undefined) : String(value);
 
   function handleValueChange(v) {
     if (v === EMPTY_VALUE) {

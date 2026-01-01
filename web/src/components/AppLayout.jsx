@@ -350,6 +350,18 @@ export function AppLayout() {
                       </Button>
                     }
                   >
+                  {user?.id ? (
+                    <DropdownItem asChild>
+                      <Link to={`/profile/${user.id}`}>
+                        <Flex align="center" gap="2">
+                          <Icon icon={User} size={16} />
+                          <Text as="span" size="2">
+                            {t('nav_profile')}
+                          </Text>
+                        </Flex>
+                      </Link>
+                    </DropdownItem>
+                  ) : null}
                   <DropdownItem asChild>
                     <Link to="/saved-searches">
                       <Flex align="center" gap="2">
@@ -547,6 +559,14 @@ export function AppLayout() {
             <div className="mt-4 border-t border-[var(--gray-a5)] pt-4">
               {isAuthenticated ? (
                 <div className="space-y-1">
+                  {user?.id ? (
+                    <Link to={`/profile/${user.id}`} onClick={() => setDrawerOpen(false)} className="block">
+                      <button className="w-full flex items-center gap-3 p-3 rounded hover:bg-[var(--gray-a3)]">
+                        <Icon icon={User} size={18} />
+                        <span className="text-sm">{t('nav_profile')}</span>
+                      </button>
+                    </Link>
+                  ) : null}
                   <Link to="/saved-searches" onClick={() => setDrawerOpen(false)} className="block">
                     <button className="w-full flex items-center gap-3 p-3 rounded hover:bg-[var(--gray-a3)]">
                       <Icon icon={Bookmark} size={18} />

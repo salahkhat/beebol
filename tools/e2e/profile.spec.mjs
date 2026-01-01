@@ -4,7 +4,7 @@ import path from 'path';
 
 const API_BASE = process.env.API_BASE_URL || 'http://127.0.0.1:8000';
 
-test('profile edit flow (avatar, cover, social link)', async ({ page, request, baseURL }) => {
+test('profile edit flow (avatar, social link)', async ({ page, request, baseURL }) => {
   // register (best-effort)
   const username = `e2e_${Date.now()}`;
   const password = 'TestPass123!';
@@ -14,7 +14,7 @@ test('profile edit flow (avatar, cover, social link)', async ({ page, request, b
   const access = token.access;
 
   // Verify web dev server is up
-  const WEB_ROOT = process.env.BASE_URL || 'http://localhost:3000';
+  const WEB_ROOT = process.env.BASE_URL || baseURL || 'http://localhost:3000';
   const webResp = await request.get(WEB_ROOT);
   console.log('WEB root status:', webResp.status());
   const webText = await webResp.text();
@@ -52,7 +52,8 @@ test('profile edit flow (avatar, cover, social link)', async ({ page, request, b
   await request.patch(`${API_BASE}/api/v1/me/profile/`, { headers: { Authorization: `Bearer ${access}` }, data: { display_name: 'E2E Tester' } }).catch(() => {});
 
   // Navigate directly to edit page; AuthProvider will find tokens immediately
-  await page.goto('/profile/edit', { waitUntil: 'networkidle' });
+  const editUrl = new URL('/profile/edit', WEB_ROOT).toString();
+  await page.goto(editUrl, { waitUntil: 'networkidle' });
 
   // If the ErrorBoundary captured an error, surface it (helps debugging unstable E2E failures)
   const lastErr = await waitForLastError(page, 10000);
@@ -61,8 +62,8 @@ test('profile edit flow (avatar, cover, social link)', async ({ page, request, b
     throw new Error('App rendered error: ' + (lastErr.message || JSON.stringify(lastErr)));
   }
 
-  // Wait for Edit form to be ready (bio textarea visible)
-  await page.locator('textarea').first().waitFor({ timeout: 60000 });
+  // Wait for Edit form to be ready (display name input visible)
+  await page.locator('input:not([type=file])').first().waitFor({ timeout: 60000 });
 
   async function waitForLastError(page, timeout = 5000) {
     const start = Date.now();
@@ -74,26 +75,24 @@ test('profile edit flow (avatar, cover, social link)', async ({ page, request, b
     return null;
   }
 
-  // fill text fields
+  // fill fields
   await page.locator('input:not([type=file])').first().fill('E2E Tester');
-  await page.locator('textarea').fill('This is a test bio from Playwright E2E.');
 
   // add a social link
-  await page.getByRole('button', { name: /Add link/i }).click();
-  await page.locator('select').first().selectOption('twitter');
+  await page.getByRole('button', { name: /Add link|إضافة رابط/i }).click();
+  // Select "Twitter" from the Radix Select
+  await page.getByRole('combobox').first().click();
+  await page.getByRole('option', { name: /Twitter|تويتر/i }).click();
   await page.locator('input[placeholder="https://..."]').first().fill('https://twitter.com/e2etest');
 
-  // create tiny PNG files for avatar and cover
+  // create tiny PNG file for avatar
   const tmpDir = path.resolve('.playwright-temp');
   fs.mkdirSync(tmpDir, { recursive: true });
   const base64Png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAAWgmWQ0AAAAASUVORK5CYII=';
   const avatarPath = path.join(tmpDir, `avatar-${Date.now()}.png`);
-  const coverPath = path.join(tmpDir, `cover-${Date.now()}.png`);
   fs.writeFileSync(avatarPath, Buffer.from(base64Png, 'base64'));
-  fs.writeFileSync(coverPath, Buffer.from(base64Png, 'base64'));
 
   await page.setInputFiles('input[name=avatar]', avatarPath);
-  await page.setInputFiles('input[name=cover]', coverPath);
 
   // submit
   await page.getByRole('button', { name: /Save|حفظ/i }).click();
@@ -101,5 +100,5 @@ test('profile edit flow (avatar, cover, social link)', async ({ page, request, b
   // ensure redirect to profile page and assertions
   await page.waitForURL('**/profile/*', { timeout: 10000 });
   await expect(page.getByText('E2E Tester')).toBeVisible();
-  await expect(page.getByRole('link', { name: /twitter|link/i })).toBeVisible();
+  await expect(page.getByRole('link', { name: /twitter|تويتر|link|رابط/i })).toBeVisible();
 });

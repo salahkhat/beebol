@@ -1,40 +1,47 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Container, Flex, Heading, Text, Button } from '@radix-ui/themes';
+import { Flex, Heading, Text } from '@radix-ui/themes';
 import { api } from '../lib/api';
+import { Card, CardBody, CardHeader } from '../ui/Card';
+import { Button } from '../ui/Button';
+import { Input } from '../ui/Input';
+import { Select } from '../ui/Select';
+import { InlineError } from '../ui/InlineError';
+import { Skeleton } from '../ui/Skeleton';
+import { useToast } from '../ui/Toast';
+import { normalizeMediaUrl } from '../lib/mediaUrl';
+import { useI18n } from '../i18n/i18n';
 
 export default function EditProfilePage() {
   const [profile, setProfile] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [displayName, setDisplayName] = useState('');
-  const [bio, setBio] = useState('');
   const [avatarFile, setAvatarFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
-  const [coverFile, setCoverFile] = useState(null);
-  const [coverPreviewUrl, setCoverPreviewUrl] = useState(null);
   const [socialLinks, setSocialLinks] = useState([]);
-  const [fetchError, setFetchError] = useState(false);
+  const [fetchError, setFetchError] = useState(null);
   const navigate = useNavigate();
+  const toast = useToast();
+  const { t } = useI18n();
 
   useEffect(() => {
     let mounted = true;
     (async () => {
       setLoading(true);
-      setFetchError(false);
+      setFetchError(null);
       try {
         const res = await api.meProfile();
         if (!mounted) return;
         if (res) {
           setProfile(res);
           setDisplayName(res.display_name || '');
-          setBio(res.bio || '');
           setSocialLinks(Array.isArray(res.social_links) ? res.social_links : []);
         }
       } catch (e) {
         // Mark fetch error and continue to avoid crashes
         console.error('Failed to fetch meProfile', e);
-        setFetchError(true);
+        setFetchError(e);
       } finally {
         setLoading(false);
       }
@@ -60,7 +67,7 @@ export default function EditProfilePage() {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.updateMeProfile({ display_name: displayName, bio, social_links: socialLinks });
+      await api.updateMeProfile({ display_name: displayName, social_links: socialLinks });
       if (avatarFile) {
         await api.uploadAvatar(avatarFile);
       }
@@ -72,127 +79,187 @@ export default function EditProfilePage() {
         URL.revokeObjectURL(previewUrl);
         setPreviewUrl(null);
       }
-      // upload cover if present
-      if (coverFile) {
-        await api.uploadCover(coverFile);
-        setCoverFile(null);
-        if (coverPreviewUrl) {
-          URL.revokeObjectURL(coverPreviewUrl);
-          setCoverPreviewUrl(null);
-        }
-      }
-      alert('Profile updated');
+      toast.push({ title: t('toast_saved') });
       navigate(`/profile/${res.user_id}`);
     } catch (err) {
-      alert('Failed to save profile');
+      toast.push({ title: t('profile_save_failed'), description: String(err?.message || err), variant: 'error' });
     } finally {
       setSaving(false);
     }
   }
 
-  if (loading) return <Container><Text>Loading…</Text></Container>;
-  if (fetchError) return <Container><Text>An error occurred loading your profile — try reloading the page.</Text></Container>;
+  if (loading) {
+    return (
+      <Card className="mx-auto max-w-2xl">
+        <CardHeader>
+          <Skeleton className="h-6 w-40" />
+        </CardHeader>
+        <CardBody>
+          <Flex direction="column" gap="4">
+            <div>
+              <Skeleton className="h-4 w-32" />
+              <div className="mt-2">
+                <Skeleton className="h-10 w-full" />
+              </div>
+            </div>
+            <div>
+              <Skeleton className="h-4 w-24" />
+              <Flex align="center" gap="4" mt="2">
+                <Skeleton className="h-20 w-20 rounded-full" />
+                <Skeleton className="h-10 w-40" />
+              </Flex>
+            </div>
+            <div>
+              <Skeleton className="h-4 w-28" />
+              <div className="mt-2">
+                <Skeleton className="h-10 w-full" />
+              </div>
+            </div>
+          </Flex>
+        </CardBody>
+      </Card>
+    );
+  }
 
   return (
-    <Container>
-      <form onSubmit={onSave} className="py-6">
-        <Heading size="4">Edit profile</Heading>
+    <Flex direction="column" gap="4" className="mx-auto max-w-2xl">
+      <InlineError
+        error={fetchError}
+        onRetry={() => {
+          // trigger a reload by mimicking initial mount behavior
+          setLoading(true);
+          setFetchError(null);
+          api
+            .meProfile()
+            .then((res) => {
+              setProfile(res || {});
+              setDisplayName(res?.display_name || '');
+              setSocialLinks(Array.isArray(res?.social_links) ? res.social_links : []);
+            })
+            .catch((e) => setFetchError(e))
+            .finally(() => setLoading(false));
+        }}
+      />
 
-        <div className="mt-4">
-          <label className="block text-sm font-medium">Avatar</label>
-          <div className="mt-2 flex items-center gap-4">
-            <div className="h-20 w-20 rounded-full overflow-hidden bg-[var(--gray-a3)]">
-              {previewUrl ? (
-                // preview from selected file
-                <img src={previewUrl} alt="preview" className="h-20 w-20 object-cover" />
-              ) : profile?.avatar_medium ? (
-                <img src={profile.avatar_medium} alt="avatar" className="h-20 w-20 object-cover" />
-              ) : (
-                <div className="h-20 w-20" />
-              )}
-            </div>
-            <div>
-              <input name="avatar" type="file" accept="image/*" onChange={onFileChange} />
-              <div className="mt-2 text-sm text-gray-500">Max size 5MB. JPG/PNG recommended.</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-6">
-          <label className="block text-sm font-medium">Cover</label>
-          <div className="mt-2">
-            <div className="w-full h-40 rounded overflow-hidden bg-[var(--gray-a3)]">
-              {coverPreviewUrl ? (
-                <img src={coverPreviewUrl} alt="cover-preview" className="w-full h-full object-cover" />
-              ) : profile?.cover_medium ? (
-                <img src={profile.cover_medium} alt="cover" className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full" />
-              )}
-            </div>
-            <div className="mt-2">
-              <input name="cover" type="file" accept="image/*" onChange={(e) => {
-                const f = e.target.files && e.target.files[0];
-                if (!f) return;
-                setCoverFile(f);
-                const url = URL.createObjectURL(f);
-                setCoverPreviewUrl(url);
-              }} />
-              <div className="mt-2 text-sm text-gray-500">Max size 8MB. Wide images recommended (1200×400).</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-6">
-          <label className="block text-sm font-medium">Social links</label>
-          <div className="mt-2 space-y-2">
-            {socialLinks.map((s, idx) => (
-              <div key={idx} className="flex gap-2 items-center">
-                <select value={(s && s.type) || ''} onChange={(e) => {
-                  const copy = [...socialLinks];
-                  copy[idx] = { ...copy[idx], type: e.target.value };
-                  setSocialLinks(copy);
-                }} className="rounded border px-2 py-1">
-                  <option value="">Type</option>
-                  <option value="twitter">Twitter</option>
-                  <option value="facebook">Facebook</option>
-                  <option value="instagram">Instagram</option>
-                  <option value="website">Website</option>
-                </select>
-                <input value={s.url || ''} onChange={(e) => {
-                  const copy = [...socialLinks];
-                  copy[idx] = { ...copy[idx], url: e.target.value };
-                  setSocialLinks(copy);
-                }} placeholder="https://..." className="flex-1 rounded border px-2 py-1" />
-                <button type="button" className="text-red-600" onClick={() => {
-                  const copy = [...socialLinks];
-                  copy.splice(idx, 1);
-                  setSocialLinks(copy);
-                }}>Remove</button>
+      <form onSubmit={onSave}>
+        <Card>
+          <CardHeader>
+            <Flex direction="column" gap="1">
+              <Heading size="5">{t('profile_edit_title')}</Heading>
+              <Text size="2" color="gray">
+                {t('profile_edit_subtitle')}
+              </Text>
+            </Flex>
+          </CardHeader>
+          <CardBody>
+            <Flex direction="column" gap="5">
+              <div>
+                <Text as="div" size="2" color="gray" className="mb-2">
+                  {t('profile_display_name')}
+                </Text>
+                <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
               </div>
-            ))}
 
-            <div>
-              <button type="button" className="rounded border px-3 py-1" onClick={() => setSocialLinks([...socialLinks, { type: '', url: '' }])}>Add link</button>
-              <div className="mt-1 text-sm text-gray-500">Add links to social profiles or a personal website.</div>
-            </div>
-          </div>
-        </div>
+              <div>
+                <Text as="div" size="2" color="gray" className="mb-2">
+                  {t('profile_avatar')}
+                </Text>
+                <Flex align="center" gap="4" wrap="wrap">
+                  <div className="h-20 w-20 shrink-0 overflow-hidden rounded-full border border-[var(--gray-a5)] bg-[var(--color-panel-solid)]">
+                    {previewUrl ? (
+                      <img src={previewUrl} alt="preview" className="h-20 w-20 object-cover" />
+                    ) : profile?.avatar_medium ? (
+                      <img src={normalizeMediaUrl(profile.avatar_medium)} alt="avatar" className="h-20 w-20 object-cover" />
+                    ) : (
+                      <div className="h-20 w-20 bg-[var(--gray-a3)]" />
+                    )}
+                  </div>
+                  <div style={{ minWidth: 240 }}>
+                    <input name="avatar" type="file" accept="image/*" onChange={onFileChange} />
+                    <Text as="div" size="2" color="gray" className="mt-2">
+                      {t('profile_avatar_help')}
+                    </Text>
+                  </div>
+                </Flex>
+              </div>
 
-        <div className="mt-4">
-          <label className="block text-sm font-medium">Display name</label>
-          <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="mt-1 block w-full rounded border px-3 py-2" />
-        </div>
+              <div>
+                <Text as="div" size="2" color="gray" className="mb-2">
+                  {t('profile_social_links')}
+                </Text>
 
-        <div className="mt-4">
-          <label className="block text-sm font-medium">Bio</label>
-          <textarea value={bio} onChange={(e) => setBio(e.target.value)} className="mt-1 block w-full rounded border px-3 py-2 h-28" />
-        </div>
+                <Flex direction="column" gap="2">
+                  {socialLinks.map((s, idx) => (
+                    <Flex key={idx} gap="2" align="center" wrap="wrap">
+                      <div className="w-full sm:w-[160px]">
+                        <Select
+                          value={String((s && s.type) || '')}
+                          onChange={(e) => {
+                            const copy = [...socialLinks];
+                            copy[idx] = { ...copy[idx], type: e.target.value };
+                            setSocialLinks(copy);
+                          }}
+                        >
+                          <option value="">{t('profile_social_type')}</option>
+                          <option value="twitter">{t('social_twitter')}</option>
+                          <option value="facebook">{t('social_facebook')}</option>
+                          <option value="instagram">{t('social_instagram')}</option>
+                          <option value="website">{t('social_website')}</option>
+                        </Select>
+                      </div>
 
-        <div className="mt-6">
-          <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
-        </div>
+                      <div className="w-full sm:flex-1" style={{ minWidth: 240 }}>
+                        <Input
+                          value={s?.url || ''}
+                          onChange={(e) => {
+                            const copy = [...socialLinks];
+                            copy[idx] = { ...copy[idx], url: e.target.value };
+                            setSocialLinks(copy);
+                          }}
+                          placeholder="https://..."
+                        />
+                      </div>
+
+                      <Button
+                        type="button"
+                        variant="danger"
+                        size="sm"
+                        onClick={() => {
+                          const copy = [...socialLinks];
+                          copy.splice(idx, 1);
+                          setSocialLinks(copy);
+                        }}
+                      >
+                        {t('remove')}
+                      </Button>
+                    </Flex>
+                  ))}
+
+                  <div className="pt-1">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setSocialLinks([...socialLinks, { type: '', url: '' }])}
+                    >
+                      {t('profile_social_add_link')}
+                    </Button>
+                    <Text as="div" size="2" color="gray" className="mt-2">
+                      {t('profile_social_help')}
+                    </Text>
+                  </div>
+                </Flex>
+              </div>
+
+              <div className="pt-1">
+                <Button type="submit" disabled={saving} className="w-full sm:w-auto">
+                  {saving ? t('saving') : t('save')}
+                </Button>
+              </div>
+            </Flex>
+          </CardBody>
+        </Card>
       </form>
-    </Container>
+    </Flex>
   );
 }
