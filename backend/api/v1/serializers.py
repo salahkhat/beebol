@@ -25,7 +25,6 @@ class UserMeSerializer(serializers.ModelSerializer):
         model = User
         fields = ["id", "username", "email", "first_name", "last_name", "is_staff"]
 
-
 class RegisterSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=150)
     email = serializers.EmailField(required=False, allow_blank=True)
@@ -136,6 +135,123 @@ class NeighborhoodSerializer(serializers.ModelSerializer):
     class Meta:
         model = Neighborhood
         fields = ["id", "name_ar", "name_en", "slug", "city", "city_id"]
+
+
+class ProfileSerializer(serializers.ModelSerializer):
+    user_id = serializers.IntegerField(source="user.id", read_only=True)
+    avatar = serializers.SerializerMethodField()
+    avatar_medium = serializers.SerializerMethodField()
+    avatar_thumbnail = serializers.SerializerMethodField()
+    cover = serializers.SerializerMethodField()
+    cover_medium = serializers.SerializerMethodField()
+    avatar_cache_control = serializers.SerializerMethodField()
+    governorate = GovernorateSerializer(read_only=True)
+    governorate_id = serializers.PrimaryKeyRelatedField(
+        queryset=Governorate.objects.all(), source="governorate", write_only=True, required=False
+    )
+    city = CitySerializer(read_only=True)
+    city_id = serializers.PrimaryKeyRelatedField(queryset=City.objects.all(), source="city", write_only=True, required=False)
+    neighborhood = NeighborhoodSerializer(read_only=True)
+    neighborhood_id = serializers.PrimaryKeyRelatedField(
+        queryset=Neighborhood.objects.all(), source="neighborhood", write_only=True, required=False
+    )
+
+    class Meta:
+        model = getattr(__import__('market.models', fromlist=['Profile']), 'Profile')
+        fields = [
+            "id",
+            "user_id",
+            "display_name",
+            "bio",
+            "avatar",
+            "cover",
+            "cover_medium",
+            "governorate",
+            "governorate_id",
+            "city",
+            "city_id",
+            "neighborhood",
+            "neighborhood_id",
+            "social_links",
+            "seller_rating",
+            "listings_count",
+            "followers_count",
+            "verification_flags",
+            "privacy_settings",
+            "metadata",
+            "created_at",
+            "avatar_medium",
+            "avatar_thumbnail",
+            "avatar_cache_control",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "user_id", "seller_rating", "listings_count", "followers_count", "created_at", "updated_at"]
+
+    def get_avatar(self, obj):
+        try:
+            request = self.context.get("request")
+            url = getattr(obj, "avatar")
+            if url:
+                url = str(url.url) if hasattr(url, 'url') else str(url)
+                if request is not None and not url.startswith("http://") and not url.startswith("https://"):
+                    return request.build_absolute_uri(url)
+                return url
+        except Exception:
+            pass
+        return None
+
+    def _build_url(self, request, url):
+        try:
+            if not url:
+                return None
+            url = str(url.url) if hasattr(url, 'url') else str(url)
+            if request is not None and not url.startswith("http://") and not url.startswith("https://"):
+                return request.build_absolute_uri(url)
+            return url
+        except Exception:
+            return None
+
+    def get_avatar(self, obj):
+        try:
+            request = self.context.get("request")
+            return self._build_url(request, getattr(obj, "avatar", None))
+        except Exception:
+            return None
+
+    def get_avatar_medium(self, obj):
+        try:
+            request = self.context.get("request")
+            return self._build_url(request, getattr(obj, "avatar_medium", None))
+        except Exception:
+            return None
+
+    def get_avatar_thumbnail(self, obj):
+        try:
+            request = self.context.get("request")
+            return self._build_url(request, getattr(obj, "avatar_thumbnail", None))
+        except Exception:
+            return None
+
+    def get_cover(self, obj):
+        try:
+            request = self.context.get("request")
+            url = getattr(obj, "cover")
+            return self._build_url(request, url)
+        except Exception:
+            pass
+        return None
+
+    def get_cover_medium(self, obj):
+        try:
+            request = self.context.get("request")
+            return self._build_url(request, getattr(obj, "cover_medium", None))
+        except Exception:
+            return None
+
+    def get_avatar_cache_control(self, obj):
+        # Provide a simple hint that clients can use for caching variants.
+        # This is a static heuristic for now; can be replaced with storage metadata.
+        return "max-age=86400"
 
 
 class ListingImageSerializer(serializers.ModelSerializer):

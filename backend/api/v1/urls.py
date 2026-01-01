@@ -16,6 +16,10 @@ from .views import (
     PublicQuestionViewSet,
     RegisterView,
     ListingReportViewSet,
+    UserProfileView,
+    MeProfileView,
+    AvatarUploadView,
+    CoverUploadView,
 )
 
 router = DefaultRouter()
@@ -36,5 +40,9 @@ urlpatterns = [
     path("auth/token/", TokenObtainPairView.as_view(), name="v1-token-obtain-pair"),
     path("auth/token/refresh/", TokenRefreshView.as_view(), name="v1-token-refresh"),
     path("me/", MeView.as_view(), name="v1-me"),
+    path("users/<int:user_id>/profile/", UserProfileView.as_view(), name="v1-user-profile"),
+    path("me/profile/", MeProfileView.as_view(), name="v1-me-profile"),
+    path("me/profile/avatar/", AvatarUploadView.as_view(), name="v1-me-avatar"),
+    path("me/profile/cover/", CoverUploadView.as_view(), name="v1-me-cover"),
     path("", include(router.urls)),
 ]

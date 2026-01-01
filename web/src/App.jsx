@@ -16,6 +16,8 @@ const RegisterPage = lazy(() => import('./pages/Register').then((m) => ({ defaul
 const CreateListingPage = lazy(() => import('./pages/CreateListing').then((m) => ({ default: m.CreateListingPage })));
 const MyListingsPage = lazy(() => import('./pages/MyListings').then((m) => ({ default: m.MyListingsPage })));
 const SellerProfilePage = lazy(() => import('./pages/SellerProfile').then((m) => ({ default: m.SellerProfilePage })));
+const ProfilePage = lazy(() => import('./pages/Profile').then((m) => ({ default: m.default })));
+const EditProfilePage = lazy(() => import('./pages/EditProfile').then((m) => ({ default: m.default })));
 const SavedSearchesPage = lazy(() => import('./pages/SavedSearches').then((m) => ({ default: m.SavedSearchesPage })));
 const ReportListingPage = lazy(() => import('./pages/ReportListing').then((m) => ({ default: m.ReportListingPage })));
 const MyReportsPage = lazy(() => import('./pages/MyReports').then((m) => ({ default: m.MyReportsPage })));
@@ -66,6 +68,7 @@ export function App() {
         <Route
           element={
             <ErrorBoundary
+              onError={(err, info) => console.error('App ErrorBoundary caught:', err, info)}
               fallback={() => (
                 <div className="min-h-screen bg-[var(--gray-1)]">
                   <div className="mx-auto w-full max-w-5xl px-4 py-6">
@@ -97,6 +100,15 @@ export function App() {
           <Route path="/listings/:id" element={withSuspense(<ListingDetailPage />)} />
           <Route path="/map" element={withSuspense(<MapListingsPage />)} />
           <Route path="/sellers/:id" element={withSuspense(<SellerProfilePage />)} />
+          <Route path="/profile/:id" element={withSuspense(<ProfilePage />)} />
+          <Route
+            path="/profile/edit"
+            element={
+              <RequireAuth>
+                {withSuspense(<EditProfilePage />)}
+              </RequireAuth>
+            }
+          />
           <Route path="/compare" element={withSuspense(<CompareListingsPage />)} />
           <Route path="/login" element={withSuspense(<LoginPage />)} />
           <Route path="/register" element={withSuspense(<RegisterPage />)} />

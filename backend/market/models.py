@@ -238,6 +238,54 @@ class AdminSeedJob(TimestampedModel):
         ordering = ["-created_at", "-id"]
 
 
+# -- Profile model ----------------------------------------------------------------
+
+def profile_avatar_upload_to(instance: "Profile", filename: str) -> str:
+    return f"profiles/{instance.user_id}/avatars/{filename}"
+
+
+def profile_cover_upload_to(instance: "Profile", filename: str) -> str:
+    return f"profiles/{instance.user_id}/covers/{filename}"
+
+
+class Profile(TimestampedModel):
+    # Use distinct related_name to avoid clashes with existing `django_classified.Profile`
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="market_profile")
+
+    display_name = models.CharField(max_length=80, blank=True)
+    bio = models.TextField(blank=True)
+
+    avatar = models.ImageField(upload_to=profile_avatar_upload_to, null=True, blank=True)
+    # Derived sizes for responsive delivery
+    avatar_medium = models.ImageField(upload_to=lambda instance, fn: f"profiles/{instance.user_id}/avatars/medium/{fn}", null=True, blank=True)
+    avatar_thumbnail = models.ImageField(upload_to=lambda instance, fn: f"profiles/{instance.user_id}/avatars/thumb/{fn}", null=True, blank=True)
+    cover = models.ImageField(upload_to=profile_cover_upload_to, null=True, blank=True)
+    # Derived cover variant for responsive delivery
+    cover_medium = models.ImageField(upload_to=lambda instance, fn: f"profiles/{instance.user_id}/covers/medium/{fn}", null=True, blank=True)
+
+    governorate = models.ForeignKey(Governorate, on_delete=models.SET_NULL, null=True, blank=True)
+    city = models.ForeignKey(City, on_delete=models.SET_NULL, null=True, blank=True)
+    neighborhood = models.ForeignKey(Neighborhood, on_delete=models.SET_NULL, null=True, blank=True)
+
+    social_links = models.JSONField(default=list, blank=True)  # list of {type, url}
+
+    seller_rating = models.DecimalField(max_digits=3, decimal_places=2, null=True, blank=True)
+    listings_count = models.IntegerField(default=0)
+    followers_count = models.IntegerField(default=0)
+
+    verification_flags = models.JSONField(default=dict, blank=True)
+
+    privacy_settings = models.JSONField(default=lambda: {"show_contact": False, "show_activity": True, "followers_visible": True}, blank=True)
+
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["display_name"])]
+
+    def __str__(self) -> str:
+        return f"Profile({self.user_id})"
+
+
 class CategoryAttributeType(models.TextChoices):
     INT = "int", "Integer"
     DECIMAL = "decimal", "Decimal"

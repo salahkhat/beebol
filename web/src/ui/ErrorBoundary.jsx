@@ -13,6 +13,15 @@ export class ErrorBoundary extends Component {
 
   componentDidCatch(error, info) {
     try {
+      // expose the last error to the window for E2E debugging
+      try {
+        if (typeof window !== 'undefined') {
+          // avoid circular references
+          window.__LAST_ERROR__ = { message: String(error), stack: error && error.stack ? error.stack : null, info };
+        }
+      } catch (e) {
+        // ignore
+      }
       this.props.onError?.(error, info);
     } catch {
       // ignore

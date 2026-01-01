@@ -4,10 +4,12 @@
   "scripts": {
     "dev": "concurrently -k -n backend,web -c blue,green \"powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/dev-backend.ps1\" \"npm --prefix web run dev\"",
     "install:all": "npm install && npm --prefix web install",
-    "audit:mobile": "node tools/audit/run-audit.mjs"
+    "audit:mobile": "node tools/audit/run-audit.mjs",
+    "e2e": "npx playwright test tools/e2e --config=tools/e2e/playwright.config.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
-    "playwright": "^1.40.0"
+    "playwright": "^1.40.0",
+    "@playwright/test": "^1.57.0"
   }
 }

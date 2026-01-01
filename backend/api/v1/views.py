@@ -68,6 +68,190 @@ class MeView(APIView):
         return Response(UserMeSerializer(request.user).data)
 
 
+class UserProfileView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, user_id: int):
+        user = User.objects.filter(id=user_id).first()
+        if not user:
+            return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+        # market-specific profile is available as user.market_profile
+        profile = getattr(user, 'market_profile', None)
+        # Ensure market profile exists if needed
+        if profile is None:
+            from market.models import Profile
+
+            profile, _ = Profile.objects.get_or_create(user=user)
+        from .serializers import ProfileSerializer
+
+        data = ProfileSerializer(profile, context={"request": request}).data
+
+        # Enforce privacy settings for public callers: hide contact-related fields when disabled
+        try:
+            is_owner = request.user and request.user.is_authenticated and request.user.id == user.id
+        except Exception:
+            is_owner = False
+
+        if not is_owner:
+            try:
+                ps = getattr(profile, 'privacy_settings', {}) or {}
+                # debugging: print privacy evaluation
+                # print(f'UserProfileView: is_owner={is_owner} show_contact={ps.get("show_contact", False)}')
+                if not ps.get('show_contact', False):
+                    if 'social_links' in data:
+                        data.pop('social_links', None)
+            except Exception:
+                pass
+
+        return Response(data)
+
+
+class MeProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        profile = getattr(user, "market_profile", None)
+        if profile is None:
+            from market.models import Profile
+
+            profile = Profile.objects.create(user=user)
+        from .serializers import ProfileSerializer
+
+        return Response(ProfileSerializer(profile, context={"request": request}).data)
+
+    def patch(self, request):
+        user = request.user
+        profile = getattr(user, "market_profile", None)
+        if profile is None:
+            from market.models import Profile
+
+            profile = Profile.objects.create(user=user)
+        from .serializers import ProfileSerializer
+
+        serializer = ProfileSerializer(profile, data=request.data, partial=True, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+
+class AvatarUploadView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        file = request.FILES.get("avatar")
+        if not file:
+            return Response({"detail": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Basic validations
+        if file.size > 5 * 1024 * 1024:
+            return Response({"detail": "File too large"}, status=status.HTTP_400_BAD_REQUEST)
+        if not getattr(file, "content_type", "").startswith("image/"):
+            return Response({"detail": "Invalid file type"}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user
+        profile = getattr(user, "market_profile", None)
+        if profile is None:
+            from market.models import Profile
+
+            profile = Profile.objects.create(user=user)
+
+        # Process image: create thumbnail and a medium version.
+        try:
+            from PIL import Image
+            from io import BytesIO
+            from django.core.files.base import ContentFile
+
+            img = Image.open(file)
+            img = img.convert("RGB")
+
+            # Save medium 400x400
+            med = img.copy()
+            med.thumbnail((400, 400))
+            buf = BytesIO()
+            med.save(buf, format="JPEG", quality=85)
+            med_content = ContentFile(buf.getvalue(), name=file.name)
+
+            # Save thumb 128x128
+            thumb = img.copy()
+            thumb.thumbnail((128, 128))
+            buf2 = BytesIO()
+            thumb.save(buf2, format="JPEG", quality=85)
+            thumb_content = ContentFile(buf2.getvalue(), name=file.name)
+
+            # Store the medium and thumbnail variants
+            profile.avatar.save(file.name, med_content, save=False)
+            # Also save explicit medium and thumbnail fields for direct access
+            try:
+                profile.avatar_medium.save(file.name, med_content, save=False)
+                profile.avatar_thumbnail.save(f"thumb_{file.name}", thumb_content, save=False)
+            except Exception:
+                # In case fields not present for older deployments, ignore
+                pass
+
+            profile.save()
+        except Exception:
+            # fallback: save raw file
+            profile.avatar = file
+            profile.save()
+
+        from .serializers import ProfileSerializer
+
+        return Response(ProfileSerializer(profile, context={"request": request}).data)
+
+
+class CoverUploadView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        file = request.FILES.get("cover")
+        if not file:
+            return Response({"detail": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Basic validations
+        if file.size > 8 * 1024 * 1024:
+            return Response({"detail": "File too large"}, status=status.HTTP_400_BAD_REQUEST)
+        if not getattr(file, "content_type", "").startswith("image/"):
+            return Response({"detail": "Invalid file type"}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user
+        profile = getattr(user, "market_profile", None)
+        if profile is None:
+            from market.models import Profile
+
+            profile = Profile.objects.create(user=user)
+
+        try:
+            from PIL import Image
+            from io import BytesIO
+            from django.core.files.base import ContentFile
+
+            img = Image.open(file)
+            img = img.convert("RGB")
+
+            # Save medium cover: max 1200x400
+            med = img.copy()
+            med.thumbnail((1200, 400))
+            buf = BytesIO()
+            med.save(buf, format="JPEG", quality=85)
+            med_content = ContentFile(buf.getvalue(), name=file.name)
+
+            # Save the primary cover and the medium variant
+            profile.cover.save(file.name, med_content, save=False)
+            try:
+                profile.cover_medium.save(file.name, med_content, save=False)
+            except Exception:
+                pass
+            profile.save()
+        except Exception:
+            profile.cover = file
+            profile.save()
+
+        from .serializers import ProfileSerializer
+
+        return Response(ProfileSerializer(profile, context={"request": request}).data)
+
+
 class RegisterView(APIView):
     permission_classes = [AllowAny]
 

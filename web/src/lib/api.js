@@ -206,6 +206,21 @@ export const api = {
   moderateListing: (id, moderation_status) =>
     apiFetchJson(`api/v1/listings/${id}/moderate/`, { method: 'POST', body: { moderation_status } }),
 
+  // Profile endpoints
+  userProfile: (userId) => apiFetchJson(`api/v1/users/${userId}/profile/`),
+  meProfile: () => apiFetchJson('api/v1/me/profile/'),
+  updateMeProfile: (data) => apiFetchJson('api/v1/me/profile/', { method: 'PATCH', body: data }),
+  uploadAvatar: (file) => {
+    const fd = new FormData();
+    fd.set('avatar', file);
+    return apiFetchJson('api/v1/me/profile/avatar/', { method: 'POST', body: fd });
+  },
+  uploadCover: (file) => {
+    const fd = new FormData();
+    fd.set('cover', file);
+    return apiFetchJson('api/v1/me/profile/cover/', { method: 'POST', body: fd });
+  },
+
   threads: () => apiFetchJson('api/v1/threads/'),
   thread: (id) => apiFetchJson(`api/v1/threads/${id}/`),
   createThread: (listing_id) => apiFetchJson('api/v1/threads/', { method: 'POST', body: { listing_id } }),
