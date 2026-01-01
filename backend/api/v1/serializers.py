@@ -1,7 +1,17 @@
 from django.contrib.auth import get_user_model
+from django.utils import timezone
+
+from datetime import timedelta
+import re
+
 from rest_framework import serializers
 
 from decimal import Decimal, InvalidOperation
+
+try:
+    from PIL import Image
+except Exception:  # pragma: no cover
+    Image = None
 
 from market.models import (
     Category,
@@ -13,11 +23,42 @@ from market.models import (
     ListingAttributeValue,
     ListingImage,
     Neighborhood,
+    ListingFavorite,
+    SavedSearch,
 )
-from messaging.models import PrivateMessage, PrivateThread, PublicQuestion
-from reports.models import ListingReport, ReportStatus
+from messaging.models import PrivateMessage, PrivateThread, PublicQuestion, UserBlock
+from reports.models import ListingReport, ListingReportEvent, ReportStatus, UserReport, UserReportEvent
 
 User = get_user_model()
+
+
+_ARABIC_INDIC_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+
+
+def looks_like_contact_info(text: str) -> bool:
+    if not text:
+        return False
+
+    normalized = str(text).lower().translate(_ARABIC_INDIC_DIGITS)
+
+    # Fast-path for common contact spam markers.
+    if any(token in normalized for token in ("whatsapp", "wa.me", "tel:", "واتساب", "واتس", "تليجرام", "telegram")):
+        return True
+
+    digits = re.sub(r"[^0-9]", "", normalized)
+    if len(digits) < 8:
+        return False
+
+    if digits.startswith("09") and len(digits) >= 9:
+        return True
+    if digits.startswith("963") and len(digits) >= 11:
+        return True
+    if digits.startswith("00963") and len(digits) >= 13:
+        return True
+    if "+" in normalized and len(digits) >= 10:
+        return True
+
+    return False
 
 
 class UserMeSerializer(serializers.ModelSerializer):
@@ -255,6 +296,36 @@ class ProfileSerializer(serializers.ModelSerializer):
 
 
 class ListingImageSerializer(serializers.ModelSerializer):
+    def validate_image(self, value):
+        # Django ImageField typically requires Pillow; keep this defensive.
+        if Image is None:
+            return value
+
+        # Enforce a minimal resolution to filter out tiny/low-quality uploads.
+        min_w = 400
+        min_h = 400
+
+        try:
+            pos = value.tell()
+        except Exception:
+            pos = None
+
+        try:
+            img = Image.open(value)
+            w, h = img.size
+            if w < min_w or h < min_h:
+                raise serializers.ValidationError(f"Image is too small (min {min_w}x{min_h})")
+        finally:
+            try:
+                if pos is not None:
+                    value.seek(pos)
+                else:
+                    value.seek(0)
+            except Exception:
+                pass
+
+        return value
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         try:
@@ -520,6 +591,28 @@ class ListingWriteSerializer(serializers.ModelSerializer):
         listing = super().create(validated_data)
         if incoming_attributes is not None:
             self._upsert_attributes(listing, incoming_attributes)
+
+        # Basic duplicate detection (soft flag): if seller posts the same title+price
+        # within a short window, flag for moderation review.
+        try:
+            window = timezone.now() - timedelta(days=7)
+            title = (listing.title or "").strip()
+            if title and listing.price is not None:
+                dup_qs = (
+                    Listing.objects.filter(
+                        seller_id=listing.seller_id,
+                        created_at__gte=window,
+                        is_removed=False,
+                    )
+                    .exclude(id=listing.id)
+                    .filter(title__iexact=title, price=listing.price)
+                )
+                if dup_qs.exists() and not listing.is_flagged:
+                    listing.is_flagged = True
+                    listing.save(update_fields=["is_flagged", "updated_at"])
+        except Exception:
+            pass
+
         return listing
 
     def update(self, instance, validated_data):
@@ -557,6 +650,14 @@ class PublicQuestionSerializer(serializers.ModelSerializer):
 
 
 class PublicQuestionCreateSerializer(serializers.ModelSerializer):
+    def validate_question(self, value: str) -> str:
+        request = self.context.get("request")
+        if request and getattr(request.user, "is_staff", False):
+            return value
+        if looks_like_contact_info(value):
+            raise serializers.ValidationError("Phone numbers and contact info are not allowed in questions")
+        return value
+
     class Meta:
         model = PublicQuestion
         fields = ["id", "listing", "question", "created_at"]
@@ -565,6 +666,26 @@ class PublicQuestionCreateSerializer(serializers.ModelSerializer):
 
 class PublicQuestionAnswerSerializer(serializers.Serializer):
     answer = serializers.CharField()
+
+    def validate_answer(self, value: str) -> str:
+        request = self.context.get("request")
+        if request and getattr(request.user, "is_staff", False):
+            return value
+        if looks_like_contact_info(value):
+            raise serializers.ValidationError("Phone numbers and contact info are not allowed in answers")
+        return value
+
+
+class PrivateMessageCreateSerializer(serializers.Serializer):
+    body = serializers.CharField()
+
+    def validate_body(self, value: str) -> str:
+        request = self.context.get("request")
+        if request and getattr(request.user, "is_staff", False):
+            return value
+        if looks_like_contact_info(value):
+            raise serializers.ValidationError("Phone numbers and contact info are not allowed in messages")
+        return value
 
 
 class PrivateMessageSerializer(serializers.ModelSerializer):
@@ -581,6 +702,8 @@ class PrivateThreadSerializer(serializers.ModelSerializer):
     last_message_body = serializers.CharField(read_only=True)
     last_message_at = serializers.DateTimeField(read_only=True)
     last_message_sender_username = serializers.CharField(read_only=True)
+    unread_count = serializers.IntegerField(read_only=True)
+    my_last_read_at = serializers.DateTimeField(read_only=True)
 
     class Meta:
         model = PrivateThread
@@ -594,6 +717,8 @@ class PrivateThreadSerializer(serializers.ModelSerializer):
             "last_message_body",
             "last_message_at",
             "last_message_sender_username",
+            "unread_count",
+            "my_last_read_at",
         ]
         read_only_fields = ["id", "buyer", "seller", "created_at"]
 
@@ -602,9 +727,30 @@ class CreateThreadSerializer(serializers.Serializer):
     listing_id = serializers.IntegerField()
 
 
+class UserBlockSerializer(serializers.ModelSerializer):
+    blocked_username = serializers.CharField(source="blocked.username", read_only=True)
+
+    class Meta:
+        model = UserBlock
+        fields = ["id", "blocked", "blocked_username", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+
+class UserBlockCreateSerializer(serializers.Serializer):
+    blocked_user_id = serializers.IntegerField()
+
+    def validate_blocked_user_id(self, value: int) -> int:
+        request = self.context.get("request")
+        if request and getattr(request, "user", None) is not None:
+            if request.user.is_authenticated and request.user.id == value:
+                raise serializers.ValidationError("Cannot block yourself")
+        return value
+
+
 class ListingReportSerializer(serializers.ModelSerializer):
     listing_title = serializers.CharField(source="listing.title", read_only=True)
     reporter_username = serializers.CharField(source="reporter.username", read_only=True)
+    handled_by_username = serializers.CharField(source="handled_by.username", read_only=True)
 
     class Meta:
         model = ListingReport
@@ -618,17 +764,92 @@ class ListingReportSerializer(serializers.ModelSerializer):
             "message",
             "status",
             "handled_by",
+            "handled_by_username",
             "handled_at",
+            "staff_note",
             "created_at",
         ]
         read_only_fields = [
             "id",
             "reporter",
-            "status",
             "handled_by",
+            "handled_by_username",
             "handled_at",
             "created_at",
         ]
+
+
+class UserReportSerializer(serializers.ModelSerializer):
+    reporter_username = serializers.CharField(source="reporter.username", read_only=True)
+    reported_username = serializers.CharField(source="reported.username", read_only=True)
+    handled_by_username = serializers.CharField(source="handled_by.username", read_only=True)
+
+    class Meta:
+        model = UserReport
+        fields = [
+            "id",
+            "reporter",
+            "reporter_username",
+            "reported",
+            "reported_username",
+            "listing",
+            "thread",
+            "reason",
+            "message",
+            "status",
+            "handled_by",
+            "handled_by_username",
+            "handled_at",
+            "staff_note",
+            "created_at",
+        ]
+        read_only_fields = [
+            "id",
+            "reporter",
+            "handled_by",
+            "handled_by_username",
+            "handled_at",
+            "created_at",
+        ]
+
+
+class UserReportCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserReport
+        fields = ["id", "reported", "listing", "thread", "reason", "message", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+
+        reported = attrs.get("reported")
+        if user and getattr(user, "is_authenticated", False) and reported and reported.id == user.id:
+            raise serializers.ValidationError({"reported": "You cannot report yourself."})
+
+        thread = attrs.get("thread")
+        if thread is not None and user and getattr(user, "is_authenticated", False):
+            # Only allow attaching a thread context if the reporter is a participant.
+            buyer_id = getattr(thread, "buyer_id", None)
+            seller_id = getattr(thread, "seller_id", None)
+            if user.id not in {buyer_id, seller_id}:
+                raise serializers.ValidationError({"thread": "Invalid thread."})
+
+        return attrs
+
+
+class UserReportStaffUpdateSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=list(ReportStatus.values))
+    staff_note = serializers.CharField(required=False, allow_blank=True)
+
+
+class UserReportEventSerializer(serializers.ModelSerializer):
+    actor_username = serializers.CharField(source="actor.username", read_only=True)
+
+    class Meta:
+        model = UserReportEvent
+        fields = ["id", "report", "actor", "actor_username", "from_status", "to_status", "note", "created_at"]
+        read_only_fields = ["id", "created_at"]
 
 
 class ListingReportCreateSerializer(serializers.ModelSerializer):
@@ -639,4 +860,51 @@ class ListingReportCreateSerializer(serializers.ModelSerializer):
 
 
 class ListingReportStaffUpdateSerializer(serializers.Serializer):
-    status = serializers.ChoiceField(choices=[ReportStatus.RESOLVED, ReportStatus.DISMISSED])
+    status = serializers.ChoiceField(choices=[ReportStatus.OPEN, ReportStatus.RESOLVED, ReportStatus.DISMISSED])
+    staff_note = serializers.CharField(required=False, allow_blank=True)
+
+
+class ListingReportEventSerializer(serializers.ModelSerializer):
+    actor_username = serializers.CharField(source="actor.username", read_only=True)
+
+    class Meta:
+        model = ListingReportEvent
+        fields = [
+            "id",
+            "actor",
+            "actor_username",
+            "from_status",
+            "to_status",
+            "note",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+
+class ListingFavoriteSerializer(serializers.ModelSerializer):
+    listing_title = serializers.CharField(source="listing.title", read_only=True)
+
+    class Meta:
+        model = ListingFavorite
+        fields = ["id", "listing", "listing_title", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+
+class ListingFavoriteCreateSerializer(serializers.Serializer):
+    listing_id = serializers.IntegerField()
+
+
+class SavedSearchSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SavedSearch
+        fields = [
+            "id",
+            "name",
+            "querystring",
+            "query_params",
+            "notify_enabled",
+            "last_checked_at",
+            "last_result_count",
+            "created_at",
+        ]
+        read_only_fields = ["id", "created_at", "last_checked_at", "last_result_count"]

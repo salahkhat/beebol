@@ -3,6 +3,7 @@ from pathlib import Path
 import environ
 
 import os
+import sys
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -60,6 +61,7 @@ SITE_ID = 1
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "api.middleware.RequestIdAndLoggingMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -118,6 +120,13 @@ STORAGES = {
     },
 }
 
+# Tests don't run `collectstatic`, so manifest-based staticfiles storage will fail
+# when templates resolve `{% static %}` paths. Use a non-manifest storage backend
+# for pytest runs only.
+if "pytest" in sys.modules:
+    STORAGES["staticfiles"]["BACKEND"] = "django.contrib.staticfiles.storage.StaticFilesStorage"
+    WHITENOISE_MANIFEST_STRICT = False
+
 GS_BUCKET_NAME = env("GS_BUCKET_NAME", default="beebol_images_bucket")
 GS_CREDENTIALS = None
 
@@ -156,6 +165,20 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.AllowAny",
     ],
+    "EXCEPTION_HANDLER": "api.v1.exceptions.api_exception_handler",
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+        "rest_framework.throttling.ScopedRateThrottle",
+        "api.v1.throttling.MethodScopedRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": env("DRF_THROTTLE_ANON", default="60/min"),
+        "user": env("DRF_THROTTLE_USER", default="300/min"),
+        "auth": env("DRF_THROTTLE_AUTH", default="10/min"),
+        "write": env("DRF_THROTTLE_WRITE", default="30/min"),
+        "messaging": env("DRF_THROTTLE_MESSAGING", default="60/min"),
+    },
     "DEFAULT_FILTER_BACKENDS": [
         "django_filters.rest_framework.DjangoFilterBackend",
         "rest_framework.filters.SearchFilter",
@@ -163,5 +186,33 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
+}
+
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "json": {
+            "()": "beebol_backend.logging_utils.JsonFormatter",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "json",
+        },
+    },
+    "loggers": {
+        "beebol.request": {
+            "handlers": ["console"],
+            "level": env("REQUEST_LOG_LEVEL", default="INFO"),
+            "propagate": False,
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": env("ROOT_LOG_LEVEL", default="WARNING"),
+    },
 }
 

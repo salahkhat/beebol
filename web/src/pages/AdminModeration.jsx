@@ -11,6 +11,7 @@ import { Dialog } from '../ui/Dialog';
 import { Icon } from '../ui/Icon';
 import { InlineError } from '../ui/InlineError';
 import { Skeleton } from '../ui/Skeleton';
+import { Textarea } from '../ui/Textarea';
 import { ListingThumbnail } from '../ui/ListingThumbnail';
 import { formatDate, formatMoney } from '../lib/format';
 import { useToast } from '../ui/Toast';
@@ -42,6 +43,7 @@ export function AdminModerationPage() {
   const [mode, setMode] = useState('listings');
   const [reportSaving, setReportSaving] = useState(false);
   const [reportStatusFilter, setReportStatusFilter] = useState('open');
+  const [reportNoteDraftById, setReportNoteDraftById] = useState(() => ({}));
 
   const [dialog, setDialog] = useState({ open: false, listing: null, action: null, ids: [] });
   const [selectedIds, setSelectedIds] = useState(() => new Set());
@@ -55,21 +57,33 @@ export function AdminModerationPage() {
   const [detailsLoadingIds, setDetailsLoadingIds] = useState(() => new Set());
   const [detailsErrorById, setDetailsErrorById] = useState(() => ({}));
 
+  const [reportEventsExpandedIds, setReportEventsExpandedIds] = useState(() => new Set());
+  const [reportEventsById, setReportEventsById] = useState(() => ({}));
+  const [reportEventsLoadingIds, setReportEventsLoadingIds] = useState(() => new Set());
+  const [reportEventsErrorById, setReportEventsErrorById] = useState(() => ({}));
+
+  const [userReportEventsExpandedIds, setUserReportEventsExpandedIds] = useState(() => new Set());
+  const [userReportEventsById, setUserReportEventsById] = useState(() => ({}));
+  const [userReportEventsLoadingIds, setUserReportEventsLoadingIds] = useState(() => new Set());
+  const [userReportEventsErrorById, setUserReportEventsErrorById] = useState(() => ({}));
+
   async function refresh() {
     setLoading(true);
     setError(null);
     try {
       const res = mode === 'reports'
         ? await api.reports(reportStatusFilter ? { status: reportStatusFilter } : {})
-        : await api.listings(
-            showFlagged
-              ? {
-                  ...(showRemoved ? { include_removed: 1, is_removed: true } : { moderation_status: 'pending', status: 'published' }),
-                  is_flagged: true,
-                }
-              : (showRemoved ? { include_removed: 1, is_removed: true } : { moderation_status: 'pending', status: 'published' }),
-            { auth: true },
-          );
+        : mode === 'userReports'
+          ? await api.userReports(reportStatusFilter ? { status: reportStatusFilter } : {})
+          : await api.listings(
+              showFlagged
+                ? {
+                    ...(showRemoved ? { include_removed: 1, is_removed: true } : { moderation_status: 'pending', status: 'published' }),
+                    is_flagged: true,
+                  }
+                : (showRemoved ? { include_removed: 1, is_removed: true } : { moderation_status: 'pending', status: 'published' }),
+              { auth: true },
+            );
       setData(res);
     } catch (e) {
       setError(e);
@@ -93,17 +107,62 @@ export function AdminModerationPage() {
   useEffect(() => {
     if (mode !== 'reports') {
       setReportPreviewIds(new Set());
+      setReportEventsExpandedIds(new Set());
     }
   }, [mode]);
 
   useEffect(() => {
-    if (mode === 'reports') {
+    if (mode !== 'userReports') {
+      setUserReportEventsExpandedIds(new Set());
+    }
+  }, [mode]);
+
+  async function ensureReportEvents(reportId) {
+    if (!reportId) return;
+    if (reportEventsById[reportId]) return;
+    if (reportEventsLoadingIds.has(reportId)) return;
+
+    setReportEventsLoadingIds((prev) => {
+      const next = new Set(prev);
+      next.add(reportId);
+      return next;
+    });
+    setReportEventsErrorById((prev) => ({ ...prev, [reportId]: null }));
+    try {
+      const res = await api.reportEvents(reportId);
+      const events = Array.isArray(res?.results) ? res.results : [];
+      setReportEventsById((prev) => ({ ...prev, [reportId]: events }));
+    } catch (e) {
+      setReportEventsErrorById((prev) => ({ ...prev, [reportId]: e }));
+    } finally {
+      setReportEventsLoadingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(reportId);
+        return next;
+      });
+    }
+  }
+
+  function toggleReportEvents(reportId) {
+    if (!reportId) return;
+    setReportEventsExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(reportId)) next.delete(reportId);
+      else next.add(reportId);
+      return next;
+    });
+    queueMicrotask(() => ensureReportEvents(reportId));
+  }
+
+  useEffect(() => {
+    if (mode === 'reports' || mode === 'userReports') {
       setReportStatusFilter('open');
     }
   }, [mode]);
 
   const listingResults = useMemo(() => (mode === 'listings' ? data?.results || [] : []), [data, mode]);
   const reportResults = useMemo(() => (mode === 'reports' ? data?.results || [] : []), [data, mode]);
+  const userReportResults = useMemo(() => (mode === 'userReports' ? data?.results || [] : []), [data, mode]);
 
   const allIds = Array.isArray(listingResults) ? listingResults.map((r) => r.id).filter(Boolean) : [];
   const selectedCount = selectedIds.size;
@@ -158,6 +217,43 @@ export function AdminModerationPage() {
         return next;
       });
     }
+  }
+
+  async function ensureUserReportEvents(reportId) {
+    if (!reportId) return;
+    if (userReportEventsById[reportId]) return;
+    if (userReportEventsLoadingIds.has(reportId)) return;
+
+    setUserReportEventsLoadingIds((prev) => {
+      const next = new Set(prev);
+      next.add(reportId);
+      return next;
+    });
+    setUserReportEventsErrorById((prev) => ({ ...prev, [reportId]: null }));
+    try {
+      const res = await api.userReportEvents(reportId);
+      const events = Array.isArray(res?.results) ? res.results : [];
+      setUserReportEventsById((prev) => ({ ...prev, [reportId]: events }));
+    } catch (e) {
+      setUserReportEventsErrorById((prev) => ({ ...prev, [reportId]: e }));
+    } finally {
+      setUserReportEventsLoadingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(reportId);
+        return next;
+      });
+    }
+  }
+
+  function toggleUserReportEvents(reportId) {
+    if (!reportId) return;
+    setUserReportEventsExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(reportId)) next.delete(reportId);
+      else next.add(reportId);
+      return next;
+    });
+    queueMicrotask(() => ensureUserReportEvents(reportId));
   }
 
   function toggleExpanded(listingId) {
@@ -273,15 +369,53 @@ export function AdminModerationPage() {
     return translated === key ? String(code) : translated;
   }
 
+  function handlerLabel(r) {
+    if (!r) return '';
+    if (r.handled_by_username) return String(r.handled_by_username);
+    if (r.handled_by) return t('user_number', { id: r.handled_by });
+    return t('none');
+  }
+
+  function noteKey(reportId) {
+    return `${mode}:${String(reportId)}`;
+  }
+
   async function setReportStatus(reportId, status) {
     if (!reportId) return;
     setReportSaving(true);
     try {
-      await api.updateReportStatus(reportId, status);
+      const k = noteKey(reportId);
+      const note = Object.prototype.hasOwnProperty.call(reportNoteDraftById, k)
+        ? reportNoteDraftById[k]
+        : undefined;
+      if (mode === 'userReports') {
+        await api.updateUserReportStatus(reportId, status, note);
+      } else {
+        await api.updateReportStatus(reportId, status, note);
+      }
       toast.push({
         title: t('reports_title'),
-        description: status === 'resolved' ? t('report_resolved') : t('report_dismissed'),
+        description: status === 'resolved' ? t('report_resolved') : status === 'dismissed' ? t('report_dismissed') : t('report_reopened'),
       });
+      await refresh();
+    } catch (e) {
+      toast.push({ title: t('reports_title'), description: e instanceof ApiError ? e.message : String(e), variant: 'error' });
+    } finally {
+      setReportSaving(false);
+    }
+  }
+
+  async function saveReportNote(reportId, status) {
+    if (!reportId) return;
+    setReportSaving(true);
+    try {
+      const note = reportNoteDraftById[noteKey(reportId)] ?? '';
+      if (mode === 'userReports') {
+        await api.updateUserReportStatus(reportId, status || 'open', note);
+      } else {
+        await api.updateReportStatus(reportId, status || 'open', note);
+      }
+      toast.push({ title: t('reports_title'), description: t('toast_saved') });
       await refresh();
     } catch (e) {
       toast.push({ title: t('reports_title'), description: e instanceof ApiError ? e.message : String(e), variant: 'error' });
@@ -301,7 +435,10 @@ export function AdminModerationPage() {
           <Button size="sm" variant={mode === 'reports' ? 'primary' : 'secondary'} onClick={() => setMode('reports')}>
             {t('moderation_mode_reports')}
           </Button>
-            {mode === 'reports' ? (
+          <Button size="sm" variant={mode === 'userReports' ? 'primary' : 'secondary'} onClick={() => setMode('userReports')}>
+            {t('moderation_mode_user_reports')}
+          </Button>
+            {mode === 'reports' || mode === 'userReports' ? (
               <label className="inline-flex items-center gap-2">
                 <Text size="2" color="gray">
                   {t('reports_status_filter')}
@@ -340,10 +477,12 @@ export function AdminModerationPage() {
         </Flex>
       </Flex>
 
-      {mode === 'reports' ? (
+      {mode === 'reports' || mode === 'userReports' ? (
         <Card>
           <CardHeader>
-            <Text size="2" color="gray">{t('reports_open')}</Text>
+            <Text size="2" color="gray">
+              {(mode === 'userReports' ? t('user_reports_title') : t('reports_title'))} · {t(`reports_status_${reportStatusFilter}`)}
+            </Text>
           </CardHeader>
           <CardBody>
             <InlineError error={error instanceof ApiError ? error : error} onRetry={() => setReloadNonce((n) => n + 1)} />
@@ -354,9 +493,9 @@ export function AdminModerationPage() {
                 <Skeleton className="h-16 w-full" />
                 <Skeleton className="h-16 w-full" />
               </Flex>
-            ) : reportResults.length ? (
+            ) : (mode === 'userReports' ? userReportResults : reportResults).length ? (
               <Flex direction="column" gap="3">
-                {reportResults.map((r) => (
+                {(mode === 'userReports' ? userReportResults : reportResults).map((r) => (
                   <div key={r.id} className="rounded-lg border border-[var(--gray-a5)] bg-[var(--color-panel-solid)] p-2">
                     <Flex align="start" justify="between" gap="3" wrap="wrap">
                       <div style={{ minWidth: 0 }}>
@@ -366,122 +505,221 @@ export function AdminModerationPage() {
                         <Text size="2" color="gray">
                           {t('reported_by', { user: r.reporter_username || r.reporter })} · {formatDate(r.created_at)}
                         </Text>
-                        <div className="mt-2">
-                          <Link to={`/listings/${r.listing}`} className="hover:underline">
-                            {t('report_view_listing')}{r.listing_title ? ` · ${r.listing_title}` : ''}
-                          </Link>
-                        </div>
+
+                        {mode === 'userReports' ? (
+                          <Text size="2" color="gray">
+                            {t('reported_user', {
+                              user: r.reported_username || (r.reported ? t('user_number', { id: r.reported }) : ''),
+                            })}
+                          </Text>
+                        ) : null}
+
+                        {r.handled_at ? (
+                          <Text size="2" color="gray">
+                            {t('handled_by_at', { user: handlerLabel(r), date: formatDate(r.handled_at) })}
+                          </Text>
+                        ) : null}
+
+                        {mode !== 'userReports' && r.listing ? (
+                          <div className="mt-2">
+                            <Link to={`/listings/${r.listing}`} className="hover:underline">
+                              {t('report_view_listing')}{r.listing_title ? ` · ${r.listing_title}` : ''}
+                            </Link>
+                          </div>
+                        ) : null}
+
+                        {mode === 'userReports' && r.thread ? (
+                          <div className="mt-2">
+                            <Link to={`/threads/${r.thread}`} className="hover:underline">
+                              {t('report_view_thread')}
+                            </Link>
+                          </div>
+                        ) : null}
+
+                        {mode === 'userReports' && r.listing ? (
+                          <div className="mt-2">
+                            <Link to={`/listings/${r.listing}`} className="hover:underline">
+                              {t('report_view_listing')}
+                            </Link>
+                          </div>
+                        ) : null}
+
                         {r.message ? (
                           <Text size="2" className="mt-2" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                             {r.message}
                           </Text>
                         ) : null}
+
+                        <div className="mt-3">
+                          <Text size="2" color="gray">{t('report_staff_note')}</Text>
+                          <Textarea
+                            value={Object.prototype.hasOwnProperty.call(reportNoteDraftById, noteKey(r.id))
+                              ? (reportNoteDraftById[noteKey(r.id)] ?? '')
+                              : (r.staff_note || '')}
+                            onChange={(e) => {
+                              const v = String(e.target.value ?? '');
+                              setReportNoteDraftById((prev) => ({ ...prev, [noteKey(r.id)]: v }));
+                            }}
+                            placeholder={t('none')}
+                            className="mt-1"
+                          />
+                          <Flex align="center" gap="2" wrap="wrap" className="mt-2">
+                            <Button size="sm" variant="secondary" onClick={() => saveReportNote(r.id, r.status)} disabled={reportSaving}>
+                              {t('save')}
+                            </Button>
+                            <Button size="sm" onClick={() => setReportStatus(r.id, 'resolved')} disabled={reportSaving || r.status === 'resolved'}>
+                              {t('resolve')}
+                            </Button>
+                            <Button size="sm" variant="danger" onClick={() => setReportStatus(r.id, 'dismissed')} disabled={reportSaving || r.status === 'dismissed'}>
+                              {t('dismiss')}
+                            </Button>
+                            {r.status !== 'open' ? (
+                              <Button size="sm" variant="secondary" onClick={() => setReportStatus(r.id, 'open')} disabled={reportSaving}>
+                                {t('reopen')}
+                              </Button>
+                            ) : null}
+                          </Flex>
+                        </div>
                       </div>
 
-                      <Flex align="center" gap="2" wrap="wrap">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => toggleReportPreview(Number(r.listing))}
-                          disabled={!r.listing}
-                        >
-                          <Flex align="center" gap="2">
-                            <Icon
-                              icon={reportPreviewIds.has(Number(r.listing)) ? ChevronUp : ChevronDown}
-                              size={14}
-                            />
-                            <Text as="span" size="2">
-                              {reportPreviewIds.has(Number(r.listing)) ? t('hide_preview') : t('preview')}
-                            </Text>
+                      <div className="flex flex-col items-end gap-2">
+                        <Badge variant={r.status === 'open' ? 'warn' : r.status === 'resolved' ? 'ok' : 'danger'}>
+                          {t(`reports_status_${r.status}`)}
+                        </Badge>
+
+                        {mode === 'reports' ? (
+                          <Flex direction="column" align="end" gap="2">
+                            <Button size="sm" variant="secondary" onClick={() => toggleReportPreview(r.listing)} disabled={!r.listing}>
+                              <Flex align="center" gap="2">
+                                <Icon icon={reportPreviewIds.has(r.listing) ? ChevronUp : ChevronDown} size={16} />
+                                <Text as="span" size="2">
+                                  {reportPreviewIds.has(r.listing) ? t('mod_hideDetails') : t('mod_showDetails')}
+                                </Text>
+                              </Flex>
+                            </Button>
+
+                            <Button size="sm" variant="secondary" onClick={() => toggleReportEvents(r.id)}>
+                              <Flex align="center" gap="2">
+                                <Icon icon={reportEventsExpandedIds.has(r.id) ? ChevronUp : ChevronDown} size={16} />
+                                <Text as="span" size="2">
+                                  {reportEventsExpandedIds.has(r.id) ? t('mod_hideEvents') : t('mod_showEvents')}
+                                </Text>
+                              </Flex>
+                            </Button>
                           </Flex>
-                        </Button>
-                        <Button size="sm" onClick={() => setReportStatus(r.id, 'resolved')} disabled={reportSaving}>
-                          {t('resolve')}
-                        </Button>
-                        <Button size="sm" variant="secondary" onClick={() => setReportStatus(r.id, 'dismissed')} disabled={reportSaving}>
-                          {t('dismiss')}
-                        </Button>
-                      </Flex>
+                        ) : (
+                          <Button size="sm" variant="secondary" onClick={() => toggleUserReportEvents(r.id)}>
+                            <Flex align="center" gap="2">
+                              <Icon icon={userReportEventsExpandedIds.has(r.id) ? ChevronUp : ChevronDown} size={16} />
+                              <Text as="span" size="2">
+                                {userReportEventsExpandedIds.has(r.id) ? t('mod_hideEvents') : t('mod_showEvents')}
+                              </Text>
+                            </Flex>
+                          </Button>
+                        )}
+                      </div>
                     </Flex>
 
-                    {reportPreviewIds.has(Number(r.listing)) ? (
-                      <Box mt="4">
-                        <div className="rounded-lg border border-[var(--gray-a5)] bg-[var(--color-panel-solid)] p-2">
-                          {detailsLoadingIds.has(Number(r.listing)) && !detailsById[Number(r.listing)] ? (
-                            <Flex direction="column" gap="2">
-                              <Skeleton className="h-4 w-5/6" />
-                              <Skeleton className="h-4 w-2/3" />
-                              <Skeleton className="h-24 w-full" />
-                            </Flex>
-                          ) : null}
+                    {mode !== 'userReports' && r.listing && reportPreviewIds.has(r.listing) ? (
+                      <div className="mt-3 rounded-md border border-[var(--gray-a5)] p-2">
+                        {detailsLoadingIds.has(r.listing) ? (
+                          <Flex align="center" gap="2">
+                            <Spinner size="2" />
+                            <Text size="2" color="gray">{t('loading')}</Text>
+                          </Flex>
+                        ) : detailsErrorById[r.listing] ? (
+                          <Callout.Root color="red" role="alert">
+                            <Callout.Icon>
+                              <AlertTriangle size={16} />
+                            </Callout.Icon>
+                            <Callout.Text>{t('mod_detailsLoadFailed')}</Callout.Text>
+                          </Callout.Root>
+                        ) : detailsById[r.listing] ? (
+                          <ReportListingPreview listing={detailsById[r.listing]} />
+                        ) : null}
+                      </div>
+                    ) : null}
 
-                          {detailsErrorById[Number(r.listing)] ? (
-                            <Callout.Root color="red" variant="surface">
-                              <Callout.Text>
-                                <Flex align="center" justify="between" gap="3" wrap="wrap">
-                                  <Flex align="center" gap="2">
-                                    <Icon icon={AlertTriangle} size={16} className="text-[var(--gray-11)]" aria-label="" />
-                                    <span>
-                                      {t('mod_detailsLoadFailed')}:{' '}
-                                      {detailsErrorById[Number(r.listing)] instanceof ApiError
-                                        ? detailsErrorById[Number(r.listing)].message
-                                        : String(detailsErrorById[Number(r.listing)])}
-                                    </span>
-                                  </Flex>
-                                  <Button size="sm" variant="secondary" onClick={() => ensureDetails(Number(r.listing))}>
-                                    {t('retry')}
-                                  </Button>
-                                </Flex>
-                              </Callout.Text>
-                            </Callout.Root>
-                          ) : null}
-
-                          {detailsById[Number(r.listing)] ? (
-                            <Flex align="start" justify="between" gap="4" wrap="wrap">
-                              <Flex direction="column" gap="2" style={{ minWidth: 0, flex: 1 }}>
-                                <Link to={`/listings/${detailsById[Number(r.listing)].id}`} className="hover:underline">
-                                  <Text weight="bold" size="3" style={{ wordBreak: 'break-word' }}>
-                                    {detailsById[Number(r.listing)].title || t('listing_number', { id: detailsById[Number(r.listing)].id })}
-                                  </Text>
-                                </Link>
-                                {detailsById[Number(r.listing)].price != null ? (
-                                  <Text size="2">{formatMoney(detailsById[Number(r.listing)].price, detailsById[Number(r.listing)].currency)}</Text>
-                                ) : null}
-                                <Flex align="center" gap="2" wrap="wrap">
-                                  <Icon icon={MapPin} size={14} className="text-[var(--gray-11)]" aria-label="" />
-                                  <Text size="1" color="gray">
-                                    {detailsById[Number(r.listing)].city?.name_ar || detailsById[Number(r.listing)].city?.name_en || t('none')}
-                                  </Text>
-                                  <Text size="1" color="gray">·</Text>
-                                  <Icon icon={Clock} size={14} className="text-[var(--gray-11)]" aria-label="" />
-                                  <Text size="1" color="gray">{formatDate(detailsById[Number(r.listing)].created_at)}</Text>
-                                </Flex>
-                                {detailsById[Number(r.listing)].description ? (
-                                  <Text size="2" style={{ whiteSpace: 'pre-wrap' }}>
-                                    {detailsById[Number(r.listing)].description}
+                    {mode === 'userReports' && userReportEventsExpandedIds.has(r.id) ? (
+                      <div className="mt-3 rounded-md border border-[var(--gray-a5)] p-2">
+                        {userReportEventsLoadingIds.has(r.id) && !userReportEventsById[r.id] ? (
+                          <Flex align="center" gap="2">
+                            <Spinner size="2" />
+                            <Text size="2" color="gray">{t('loading')}</Text>
+                          </Flex>
+                        ) : userReportEventsErrorById[r.id] ? (
+                          <Callout.Root color="red" role="alert">
+                            <Callout.Icon>
+                              <AlertTriangle size={16} />
+                            </Callout.Icon>
+                            <Callout.Text>
+                              {t('mod_detailsLoadFailed')}
+                            </Callout.Text>
+                          </Callout.Root>
+                        ) : Array.isArray(userReportEventsById[r.id]) && userReportEventsById[r.id].length ? (
+                          <Flex direction="column" gap="2">
+                            {userReportEventsById[r.id].map((ev) => (
+                              <div key={ev.id} className="rounded-md border border-[var(--gray-a5)] p-2">
+                                <Text size="2" color="gray">
+                                  {formatDate(ev.created_at)}
+                                  {ev.actor_username ? ` · ${ev.actor_username}` : ''}
+                                  {ev.from_status && ev.to_status ? ` · ${ev.from_status} → ${ev.to_status}` : ''}
+                                </Text>
+                                {ev.note ? (
+                                  <Text size="2" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }} className="mt-1">
+                                    {ev.note}
                                   </Text>
                                 ) : null}
-                              </Flex>
+                              </div>
+                            ))}
+                          </Flex>
+                        ) : (
+                          <Callout.Root variant="surface">
+                            <Callout.Text>{t('none')}</Callout.Text>
+                          </Callout.Root>
+                        )}
+                      </div>
+                    ) : null}
 
-                              {Array.isArray(detailsById[Number(r.listing)].images) && detailsById[Number(r.listing)].images.length ? (
-                                <a
-                                  href={normalizeMediaUrl(detailsById[Number(r.listing)].images[0].image)}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="h-24 w-24 overflow-hidden rounded-md border border-[var(--gray-a5)] bg-[var(--color-panel-solid)]"
-                                >
-                                  <img
-                                    src={normalizeMediaUrl(detailsById[Number(r.listing)].images[0].image)}
-                                    alt={detailsById[Number(r.listing)].images[0].alt_text || ''}
-                                    className="h-full w-full object-cover"
-                                    loading="lazy"
-                                  />
-                                </a>
-                              ) : null}
-                            </Flex>
-                          ) : null}
-                        </div>
-                      </Box>
+                    {mode === 'reports' && reportEventsExpandedIds.has(r.id) ? (
+                      <div className="mt-3 rounded-md border border-[var(--gray-a5)] p-2">
+                        {reportEventsLoadingIds.has(r.id) && !reportEventsById[r.id] ? (
+                          <Flex align="center" gap="2">
+                            <Spinner size="2" />
+                            <Text size="2" color="gray">{t('loading')}</Text>
+                          </Flex>
+                        ) : reportEventsErrorById[r.id] ? (
+                          <Callout.Root color="red" role="alert">
+                            <Callout.Icon>
+                              <AlertTriangle size={16} />
+                            </Callout.Icon>
+                            <Callout.Text>
+                              {t('mod_detailsLoadFailed')}
+                            </Callout.Text>
+                          </Callout.Root>
+                        ) : Array.isArray(reportEventsById[r.id]) && reportEventsById[r.id].length ? (
+                          <Flex direction="column" gap="2">
+                            {reportEventsById[r.id].map((ev) => (
+                              <div key={ev.id} className="rounded-md border border-[var(--gray-a5)] p-2">
+                                <Text size="2" color="gray">
+                                  {formatDate(ev.created_at)}
+                                  {ev.actor_username ? ` · ${ev.actor_username}` : ''}
+                                  {ev.from_status && ev.to_status ? ` · ${ev.from_status} → ${ev.to_status}` : ''}
+                                </Text>
+                                {ev.note ? (
+                                  <Text size="2" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }} className="mt-1">
+                                    {ev.note}
+                                  </Text>
+                                ) : null}
+                              </div>
+                            ))}
+                          </Flex>
+                        ) : (
+                          <Callout.Root variant="surface">
+                            <Callout.Text>{t('none')}</Callout.Text>
+                          </Callout.Root>
+                        )}
+                      </div>
                     ) : null}
                   </div>
                 ))}
@@ -495,7 +733,7 @@ export function AdminModerationPage() {
         </Card>
       ) : null}
 
-      {mode === 'reports' ? null : (
+      {mode === 'listings' ? (
       <Card>
         <CardHeader>
           <Text size="2" color="gray">
@@ -847,7 +1085,7 @@ export function AdminModerationPage() {
           )}
         </CardBody>
       </Card>
-      )}
+    ) : null}
 
       <Dialog
         open={dialog.open}

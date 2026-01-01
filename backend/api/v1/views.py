@@ -1,12 +1,19 @@
+from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db.models import OuterRef, Q, Subquery
+from django.db import connections
+from django.db import models
+from django.db.models import Case, Count, DateTimeField, F, IntegerField, OuterRef, Q, Subquery, Value, When
+from django.db.models.functions import Coalesce
 from django.utils import timezone
+from datetime import datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal, InvalidOperation
+import re
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from market.models import (
@@ -21,9 +28,12 @@ from market.models import (
     Neighborhood,
     ListingStatus,
     AdminSeedJob,
+    ListingFavorite,
+    SavedSearch,
+    Profile,
 )
-from messaging.models import PrivateMessage, PrivateThread, PublicQuestion
-from reports.models import ListingReport, ReportStatus
+from messaging.models import PrivateMessage, PrivateThread, PublicQuestion, UserBlock
+from reports.models import ListingReport, ListingReportEvent, ReportStatus, UserReport, UserReportEvent
 
 from market.seeding import is_admin_seeding_enabled, run_admin_seed
 
@@ -40,6 +50,7 @@ from .serializers import (
     ListingWriteSerializer,
     NeighborhoodSerializer,
     PrivateMessageSerializer,
+    PrivateMessageCreateSerializer,
     PrivateThreadSerializer,
     PublicQuestionAnswerSerializer,
     PublicQuestionCreateSerializer,
@@ -49,16 +60,60 @@ from .serializers import (
     ListingReportCreateSerializer,
     ListingReportSerializer,
     ListingReportStaffUpdateSerializer,
+    ListingReportEventSerializer,
+    UserReportCreateSerializer,
+    UserReportSerializer,
+    UserReportStaffUpdateSerializer,
+    UserReportEventSerializer,
+    UserBlockCreateSerializer,
+    UserBlockSerializer,
+    ListingFavoriteCreateSerializer,
+    ListingFavoriteSerializer,
+    SavedSearchSerializer,
 )
 
 User = get_user_model()
+
+
+def is_shadow_banned_user(user: User) -> bool:
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+    if getattr(user, "is_staff", False):
+        return False
+
+    profile = getattr(user, "market_profile", None)
+    if not isinstance(profile, Profile):
+        return False
+
+    metadata = getattr(profile, "metadata", None) or {}
+    if not isinstance(metadata, dict):
+        return False
+
+    return bool(metadata.get("shadow_banned"))
 
 
 class HealthView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        return Response({"status": "ok"})
+        db_ok = True
+        db_error = None
+        try:
+            with connections["default"].cursor() as cursor:
+                cursor.execute("SELECT 1")
+                cursor.fetchone()
+        except Exception as exc:
+            db_ok = False
+            db_error = str(exc)
+
+        payload = {
+            "status": "ok" if db_ok else "degraded",
+            "db": {"ok": db_ok},
+        }
+        if db_error:
+            payload["db"]["error"] = db_error
+
+        return Response(payload, status=status.HTTP_200_OK if db_ok else status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
 class MeView(APIView):
@@ -254,6 +309,8 @@ class CoverUploadView(APIView):
 
 class RegisterView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "auth"
 
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
@@ -264,6 +321,8 @@ class RegisterView(APIView):
 
 class AdminSeedView(APIView):
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "write"
 
     def post(self, request):
         if not getattr(request.user, "is_staff", False):
@@ -384,17 +443,20 @@ class ListingReportViewSet(
 ):
     permission_classes = [IsAuthenticated]
     ordering_fields = ["created_at"]
+    throttle_scope_map = {"POST": "write", "PATCH": "write", "PUT": "write"}
 
     def get_queryset(self):
         user = self.request.user
         qs = ListingReport.objects.select_related("listing", "reporter", "handled_by")
 
         if getattr(user, "is_staff", False):
-            status_q = (self.request.query_params.get("status") or "").strip().lower()
-            if status_q:
-                qs = qs.filter(status=status_q)
-            else:
-                qs = qs.filter(status=ReportStatus.OPEN)
+            # Staff can access any report by id; only apply status filtering for the list view.
+            if getattr(self, "action", None) == "list":
+                status_q = (self.request.query_params.get("status") or "").strip().lower()
+                if status_q:
+                    qs = qs.filter(status=status_q)
+                else:
+                    qs = qs.filter(status=ReportStatus.OPEN)
             return qs
 
         return qs.filter(reporter=user)
@@ -404,6 +466,8 @@ class ListingReportViewSet(
             return ListingReportCreateSerializer
         if self.action in {"update", "partial_update"}:
             return ListingReportStaffUpdateSerializer
+        if self.action == "events":
+            return ListingReportEventSerializer
         return ListingReportSerializer
 
     def perform_create(self, serializer):
@@ -418,17 +482,384 @@ class ListingReportViewSet(
         serializer.is_valid(raise_exception=True)
         desired = serializer.validated_data["status"]
 
-        if report.status != desired:
-            report.set_status(desired, actor=request.user)
-            report.save(update_fields=["status", "handled_by", "handled_at", "updated_at"])
+        note_provided = "staff_note" in serializer.validated_data
+        staff_note = serializer.validated_data.get("staff_note", "")
 
-        return Response(ListingReportSerializer(report).data)
+        old_status = report.status
+        changed_status = old_status != desired
+        changed_note = note_provided and (report.staff_note != staff_note)
+
+        if changed_status:
+            report.set_status(desired, actor=request.user)
+
+        if note_provided:
+            report.staff_note = staff_note
+
+        if changed_status or changed_note:
+            update_fields = ["updated_at"]
+            if changed_status:
+                update_fields += ["status", "handled_by", "handled_at"]
+            if note_provided:
+                update_fields += ["staff_note"]
+            report.save(update_fields=update_fields)
+
+            ListingReportEvent.objects.create(
+                report=report,
+                actor=request.user,
+                from_status=old_status,
+                to_status=report.status,
+                note=staff_note if note_provided else "",
+            )
+
+        return Response(ListingReportSerializer(report, context={"request": request}).data)
+
+    @action(detail=True, methods=["get"], url_path="events")
+    def events(self, request, pk=None):
+        report = self.get_object()
+        user = request.user
+        if not getattr(user, "is_staff", False) and getattr(report, "reporter_id", None) != getattr(user, "id", None):
+            return Response({"detail": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
+
+        qs = ListingReportEvent.objects.filter(report=report).select_related("actor")
+        data = ListingReportEventSerializer(qs, many=True).data
+        return Response({"results": data})
+
+
+class UserReportViewSet(
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    permission_classes = [IsAuthenticated]
+    ordering_fields = ["created_at"]
+    throttle_scope_map = {"POST": "write", "PATCH": "write", "PUT": "write"}
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = UserReport.objects.select_related("reporter", "reported", "handled_by", "listing", "thread")
+
+        if getattr(user, "is_staff", False):
+            if getattr(self, "action", None) == "list":
+                status_q = (self.request.query_params.get("status") or "").strip().lower()
+                if status_q:
+                    qs = qs.filter(status=status_q)
+                else:
+                    qs = qs.filter(status=ReportStatus.OPEN)
+            return qs
+
+        return qs.filter(reporter=user)
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return UserReportCreateSerializer
+        if self.action in {"update", "partial_update"}:
+            return UserReportStaffUpdateSerializer
+        if self.action == "events":
+            return UserReportEventSerializer
+        return UserReportSerializer
+
+    def perform_create(self, serializer):
+        serializer.save(reporter=self.request.user, status=ReportStatus.OPEN)
+
+    def partial_update(self, request, *args, **kwargs):
+        if not getattr(request.user, "is_staff", False):
+            return Response({"detail": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
+
+        report = self.get_object()
+        serializer = UserReportStaffUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        desired = serializer.validated_data["status"]
+
+        note_provided = "staff_note" in serializer.validated_data
+        staff_note = serializer.validated_data.get("staff_note", "")
+
+        old_status = report.status
+        changed_status = old_status != desired
+        changed_note = note_provided and (report.staff_note != staff_note)
+
+        if changed_status:
+            report.set_status(desired, actor=request.user)
+
+        if note_provided:
+            report.staff_note = staff_note
+
+        if changed_status or changed_note:
+            update_fields = ["updated_at"]
+            if changed_status:
+                update_fields += ["status", "handled_by", "handled_at"]
+            if note_provided:
+                update_fields += ["staff_note"]
+            report.save(update_fields=update_fields)
+
+            UserReportEvent.objects.create(
+                report=report,
+                actor=request.user,
+                from_status=old_status,
+                to_status=report.status,
+                note=staff_note if note_provided else "",
+            )
+
+        return Response(UserReportSerializer(report, context={"request": request}).data)
+
+    @action(detail=True, methods=["get"], url_path="events")
+    def events(self, request, pk=None):
+        report = self.get_object()
+        user = request.user
+        if not getattr(user, "is_staff", False) and getattr(report, "reporter_id", None) != getattr(user, "id", None):
+            return Response({"detail": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
+
+        qs = UserReportEvent.objects.filter(report=report).select_related("actor")
+        data = UserReportEventSerializer(qs, many=True).data
+        return Response({"results": data})
 
 
 class ListingViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly]
     search_fields = ["title", "description"]
     ordering_fields = ["created_at", "price"]
+    throttle_scope_map = {"POST": "write", "PATCH": "write", "PUT": "write", "DELETE": "write"}
+
+    @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated], url_path="bulk_moderate")
+    def bulk_moderate(self, request):
+        if not getattr(request.user, "is_staff", False):
+            return Response({"detail": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
+
+        ids = request.data.get("ids")
+        if not isinstance(ids, list) or not ids:
+            return Response({"detail": "ids must be a non-empty array"}, status=status.HTTP_400_BAD_REQUEST)
+
+        moderation_status = request.data.get("moderation_status")
+        set_removed = request.data.get("is_removed")
+        set_flagged = request.data.get("is_flagged")
+
+        allowed_ms = {ModerationStatus.PENDING, ModerationStatus.APPROVED, ModerationStatus.REJECTED}
+        update_fields = []
+        update_kwargs = {}
+
+        if moderation_status is not None:
+            if moderation_status not in allowed_ms:
+                return Response({"detail": "Invalid moderation_status"}, status=status.HTTP_400_BAD_REQUEST)
+            update_kwargs["moderation_status"] = moderation_status
+            update_fields.append("moderation_status")
+
+        if set_removed is not None:
+            update_kwargs["is_removed"] = bool(set_removed)
+            update_fields.append("is_removed")
+
+        if set_flagged is not None:
+            update_kwargs["is_flagged"] = bool(set_flagged)
+            update_fields.append("is_flagged")
+
+        if not update_kwargs:
+            return Response({"detail": "No updates specified"}, status=status.HTTP_400_BAD_REQUEST)
+
+        qs = Listing.objects.filter(id__in=ids).prefetch_related("images")
+
+        updated = 0
+        skipped = []
+        for listing in qs:
+            if moderation_status == ModerationStatus.APPROVED:
+                errors = self._publish_quality_errors(listing)
+                if errors:
+                    skipped.append({"id": listing.id, "reason": "publish_quality", "errors": errors})
+                    continue
+
+            for k, v in update_kwargs.items():
+                setattr(listing, k, v)
+            listing.save(update_fields=list(update_kwargs.keys()) + ["updated_at"])
+            updated += 1
+
+        return Response({"updated": updated, "skipped": skipped})
+
+    def _publish_quality_errors(self, listing: Listing) -> dict:
+        errors: dict[str, str] = {}
+
+        min_images = int(getattr(settings, "LISTING_MIN_IMAGES_PUBLISH", 1) or 1)
+        min_title_len = int(getattr(settings, "LISTING_MIN_TITLE_LEN", 5) or 5)
+        min_desc_len = int(getattr(settings, "LISTING_MIN_DESCRIPTION_LEN", 10) or 10)
+
+        if listing.is_removed:
+            errors["is_removed"] = "Cannot approve a removed listing"
+        if listing.status != ListingStatus.PUBLISHED:
+            errors["status"] = "Listing must be published to approve"
+
+        title = (listing.title or "").strip()
+        if len(title) < min_title_len:
+            errors["title"] = "Title is too short"
+
+        description = (listing.description or "").strip()
+        if len(description) < min_desc_len:
+            errors["description"] = "Description is required"
+
+        try:
+            img_count = listing.images.count()
+        except Exception:
+            img_count = 0
+        if img_count < min_images:
+            errors["images"] = f"At least {min_images} image(s) is required"
+
+        return errors
+
+    def _tokenize_search(self, raw: str) -> list[str]:
+        s = (raw or "").strip()
+        if not s:
+            return []
+        # Basic unicode-friendly tokenization (keeps Arabic letters).
+        tokens = re.findall(r"[0-9A-Za-z_\u0600-\u06FF]+", s)
+        out: list[str] = []
+        seen: set[str] = set()
+        for t in tokens:
+            tt = t.strip()
+            if len(tt) < 2:
+                continue
+            key = tt.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(tt)
+        return out[:10]
+
+    def filter_queryset(self, queryset):
+        qs = super().filter_queryset(queryset)
+
+        # Search v2: if `search` is present and no explicit ordering is set,
+        # apply a simple relevance rank (title matches > description matches > recency).
+        raw_q = (self.request.query_params.get("search") or "").strip()
+        if not raw_q:
+            return qs
+
+        if (self.request.query_params.get("ordering") or "").strip():
+            return qs
+
+        tokens = self._tokenize_search(raw_q)
+        if not tokens:
+            return qs
+
+        score = Value(0, output_field=IntegerField())
+
+        # Prefer full-phrase matches.
+        score = score + Case(
+            When(title__icontains=raw_q, then=Value(8)),
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+        score = score + Case(
+            When(description__icontains=raw_q, then=Value(3)),
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+
+        # Token-based ranking.
+        for tok in tokens:
+            score = score + Case(
+                When(title__icontains=tok, then=Value(3)),
+                default=Value(0),
+                output_field=IntegerField(),
+            )
+            score = score + Case(
+                When(description__icontains=tok, then=Value(1)),
+                default=Value(0),
+                output_field=IntegerField(),
+            )
+
+        return qs.annotate(_rank=score).order_by("-_rank", "-created_at")
+
+    def _public_discovery_queryset(self):
+        return (
+            Listing.objects.select_related(
+                "category",
+                "governorate",
+                "city",
+                "neighborhood",
+                "seller",
+            )
+            .prefetch_related("images")
+            .filter(
+                status=ListingStatus.PUBLISHED,
+                moderation_status=ModerationStatus.APPROVED,
+                is_removed=False,
+            )
+        )
+
+    @action(detail=False, methods=["get"], permission_classes=[AllowAny], url_path="facets")
+    def facets(self, request):
+        # Uses the same filters/search as the listings endpoint, but returns
+        # grouped counts to power a faceted filtering UX.
+        qs = self.filter_queryset(self.get_queryset())
+
+        categories = list(
+            qs.values("category_id", "category__slug", "category__name_ar", "category__name_en")
+            .annotate(count=Count("id"))
+            .order_by("-count")[:30]
+        )
+        governorates = list(
+            qs.values(
+                "governorate_id",
+                "governorate__slug",
+                "governorate__name_ar",
+                "governorate__name_en",
+            )
+            .annotate(count=Count("id"))
+            .order_by("-count")[:30]
+        )
+        cities = list(
+            qs.values("city_id", "city__slug", "city__name_ar", "city__name_en")
+            .annotate(count=Count("id"))
+            .order_by("-count")[:50]
+        )
+
+        return Response(
+            {
+                "categories": categories,
+                "governorates": governorates,
+                "cities": cities,
+            }
+        )
+
+    @action(detail=False, methods=["get"], permission_classes=[AllowAny], url_path="trending")
+    def trending(self, request):
+        qs = self._public_discovery_queryset()
+        city_id = (request.query_params.get("city") or "").strip()
+        if city_id:
+            qs = qs.filter(city_id=city_id)
+
+        since = timezone.now() - timedelta(days=7)
+        qs = qs.annotate(
+            favorites_7d=Count(
+                "favorited_by",
+                filter=Q(favorited_by__created_at__gte=since),
+            )
+        ).order_by("-favorites_7d", "-created_at")
+
+        return Response(ListingListSerializer(qs[:12], many=True, context={"request": request}).data)
+
+    @action(detail=False, methods=["get"], permission_classes=[AllowAny], url_path="new-in-city")
+    def new_in_city(self, request):
+        city_id = (request.query_params.get("city") or "").strip()
+        if not city_id:
+            return Response({"detail": "city is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        qs = self._public_discovery_queryset().filter(city_id=city_id).order_by("-created_at")
+        return Response(ListingListSerializer(qs[:12], many=True, context={"request": request}).data)
+
+    @action(detail=True, methods=["get"], permission_classes=[AllowAny], url_path="similar")
+    def similar(self, request, pk=None):
+        listing = self.get_object()
+        qs = Listing.objects.select_related("category", "city", "seller").prefetch_related("images")
+        qs = qs.filter(
+            status=ListingStatus.PUBLISHED,
+            moderation_status=ModerationStatus.APPROVED,
+            is_removed=False,
+        )
+        qs = qs.filter(category=listing.category)
+
+        # Prefer same city; fallback is still useful.
+        qs = qs.filter(city=listing.city)
+
+        qs = qs.exclude(id=listing.id).order_by("-created_at")[:12]
+        return Response(ListingListSerializer(qs, many=True, context={"request": request}).data)
 
     def _mark_pending_if_seller_change(self, listing: Listing):
         user = self.request.user
@@ -851,6 +1282,14 @@ class ListingViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        if desired == ModerationStatus.APPROVED:
+            errors = self._publish_quality_errors(listing)
+            if errors:
+                return Response(
+                    {"detail": "Listing does not meet publish quality requirements", "errors": errors},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         if listing.moderation_status != desired:
             listing.moderation_status = desired
             listing.save(update_fields=["moderation_status"])
@@ -898,6 +1337,64 @@ class ListingViewSet(viewsets.ModelViewSet):
         image = ListingImage.objects.create(listing=listing, **serializer.validated_data)
         self._mark_pending_if_seller_change(listing)
         return Response(ListingImageSerializer(image, context={"request": request}).data, status=status.HTTP_201_CREATED)
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="images/bulk",
+        permission_classes=[IsAuthenticated],
+    )
+    def add_images_bulk(self, request, pk=None):
+        """Upload multiple images in one request.
+
+        Expects multipart form-data with one of:
+        - images (multiple)
+        - images[] (multiple)
+        """
+
+        listing = self.get_object()
+        if listing.seller != request.user:
+            return Response({"detail": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
+
+        files = request.FILES.getlist("images")
+        if not files:
+            files = request.FILES.getlist("images[]")
+
+        if not files:
+            return Response({"detail": "No files uploaded"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Basic guardrails.
+        if len(files) > 12:
+            return Response({"detail": "Too many files (max 12)"}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing_count = listing.images.count()
+        if existing_count + len(files) > 24:
+            return Response({"detail": "Listing image limit reached (max 24)"}, status=status.HTTP_400_BAD_REQUEST)
+
+        max_sort = listing.images.aggregate(m=models.Max("sort_order")).get("m")
+        if max_sort is None:
+            max_sort = -1
+
+        created = []
+        for idx, f in enumerate(files, start=1):
+            if getattr(f, "size", 0) > 8 * 1024 * 1024:
+                return Response({"detail": "File too large (max 8MB)"}, status=status.HTTP_400_BAD_REQUEST)
+            if not str(getattr(f, "content_type", "")).startswith("image/"):
+                return Response({"detail": "Invalid file type"}, status=status.HTTP_400_BAD_REQUEST)
+
+            img = ListingImage.objects.create(
+                listing=listing,
+                image=f,
+                alt_text=str(request.data.get("alt_text") or ""),
+                sort_order=max_sort + idx,
+            )
+            created.append(img)
+
+        self._mark_pending_if_seller_change(listing)
+        return Response(
+            ListingImageSerializer(created, many=True, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(
         detail=True,
@@ -977,17 +1474,31 @@ class ListingViewSet(viewsets.ModelViewSet):
         listing = self.get_object()
         if request.method == "GET":
             qs = PublicQuestion.objects.filter(listing=listing).select_related("author", "answered_by")
+
+            # Shadowed questions are only visible to the author (and staff).
+            if not request.user.is_authenticated:
+                qs = qs.filter(is_shadowed=False)
+            elif not getattr(request.user, "is_staff", False):
+                qs = qs.filter(Q(is_shadowed=False) | Q(author=request.user))
+
             return Response(PublicQuestionSerializer(qs, many=True).data)
 
         if not request.user.is_authenticated:
             return Response({"detail": "Authentication required"}, status=status.HTTP_401_UNAUTHORIZED)
 
-        serializer = PublicQuestionCreateSerializer(data={**request.data, "listing": listing.id})
+        # Respect user blocks (either direction) for seller-facing interactions.
+        if UserBlock.objects.filter(blocker=request.user, blocked=listing.seller).exists() or UserBlock.objects.filter(
+            blocker=listing.seller, blocked=request.user
+        ).exists():
+            return Response({"detail": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = PublicQuestionCreateSerializer(data={**request.data, "listing": listing.id}, context={"request": request})
         serializer.is_valid(raise_exception=True)
         q = PublicQuestion.objects.create(
             listing=listing,
             author=request.user,
             question=serializer.validated_data["question"],
+            is_shadowed=is_shadow_banned_user(request.user),
         )
         return Response(PublicQuestionSerializer(q).data, status=status.HTTP_201_CREATED)
 
@@ -995,13 +1506,24 @@ class ListingViewSet(viewsets.ModelViewSet):
 class PublicQuestionViewSet(mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     queryset = PublicQuestion.objects.select_related("listing", "author", "answered_by").all()
     serializer_class = PublicQuestionSerializer
+    throttle_scope_map = {"POST": "messaging"}
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = getattr(self.request, "user", None)
+
+        if not user or not user.is_authenticated:
+            return qs.filter(is_shadowed=False)
+        if getattr(user, "is_staff", False):
+            return qs
+        return qs.filter(Q(is_shadowed=False) | Q(author=user))
 
     @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated])
     def answer(self, request, pk=None):
         q = self.get_object()
         if q.listing.seller != request.user:
             return Response({"detail": "Only the seller can answer"}, status=status.HTTP_403_FORBIDDEN)
-        serializer = PublicQuestionAnswerSerializer(data=request.data)
+        serializer = PublicQuestionAnswerSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         q.answer = serializer.validated_data["answer"]
         q.answered_by = request.user
@@ -1013,10 +1535,30 @@ class PublicQuestionViewSet(mixins.RetrieveModelMixin, viewsets.GenericViewSet):
 class PrivateThreadViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     serializer_class = PrivateThreadSerializer
+    throttle_scope_map = {"POST": "messaging"}
 
     def get_queryset(self):
         user = self.request.user
         last_msg = PrivateMessage.objects.filter(thread=OuterRef("pk")).order_by("-created_at")
+        if not getattr(user, "is_staff", False):
+            last_msg = last_msg.filter(Q(is_shadowed=False) | Q(sender=user))
+
+        epoch = datetime(1970, 1, 1, tzinfo=dt_timezone.utc)
+
+        my_last_read_at = Coalesce(
+            models.Case(
+                models.When(buyer=user, then=F("buyer_last_read_at")),
+                models.When(seller=user, then=F("seller_last_read_at")),
+                default=None,
+                output_field=DateTimeField(),
+            ),
+            Value(epoch, output_field=DateTimeField()),
+        )
+
+        unread_filter = Q(messages__created_at__gt=my_last_read_at) & ~Q(messages__sender=user)
+        if not getattr(user, "is_staff", False):
+            unread_filter &= Q(messages__is_shadowed=False)
+
         return (
             PrivateThread.objects.select_related("listing", "buyer", "seller")
             .filter(Q(buyer=user) | Q(seller=user))
@@ -1024,6 +1566,8 @@ class PrivateThreadViewSet(viewsets.ModelViewSet):
                 last_message_body=Subquery(last_msg.values("body")[:1]),
                 last_message_at=Subquery(last_msg.values("created_at")[:1]),
                 last_message_sender_username=Subquery(last_msg.values("sender__username")[:1]),
+                my_last_read_at=my_last_read_at,
+                unread_count=Count("messages", filter=unread_filter),
             )
             .order_by("-last_message_at", "-created_at")
         )
@@ -1046,6 +1590,12 @@ class PrivateThreadViewSet(viewsets.ModelViewSet):
         if listing.seller_id == request.user.id:
             return Response({"detail": "Cannot message yourself"}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Respect user blocks (either direction).
+        if UserBlock.objects.filter(blocker=request.user, blocked=listing.seller).exists() or UserBlock.objects.filter(
+            blocker=listing.seller, blocked=request.user
+        ).exists():
+            return Response({"detail": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
+
         thread, _created = PrivateThread.objects.get_or_create(
             listing=listing,
             buyer=request.user,
@@ -1058,13 +1608,346 @@ class PrivateThreadViewSet(viewsets.ModelViewSet):
         thread = self.get_object()
         if request.method == "GET":
             msgs = thread.messages.select_related("sender").all()
+
+            if not getattr(request.user, "is_staff", False):
+                msgs = msgs.filter(Q(is_shadowed=False) | Q(sender=request.user))
+
             return Response(PrivateMessageSerializer(msgs, many=True).data)
 
-        serializer = PrivateMessageSerializer(data=request.data)
+        # Respect user blocks (either direction).
+        other_user = thread.seller if request.user.id == thread.buyer_id else thread.buyer
+        if UserBlock.objects.filter(blocker=request.user, blocked=other_user).exists() or UserBlock.objects.filter(
+            blocker=other_user, blocked=request.user
+        ).exists():
+            return Response({"detail": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = PrivateMessageCreateSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         msg = PrivateMessage.objects.create(
             thread=thread,
             sender=request.user,
             body=serializer.validated_data["body"],
+            is_shadowed=is_shadow_banned_user(request.user),
         )
+
+        # Mark the sender as having read up to now.
+        now = timezone.now()
+        if request.user.id == thread.buyer_id:
+            PrivateThread.objects.filter(id=thread.id).update(buyer_last_read_at=now)
+        elif request.user.id == thread.seller_id:
+            PrivateThread.objects.filter(id=thread.id).update(seller_last_read_at=now)
+
         return Response(PrivateMessageSerializer(msg).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="read")
+    def mark_read(self, request, pk=None):
+        thread = self.get_object()
+        now = timezone.now()
+
+        if request.user.id == thread.buyer_id:
+            PrivateThread.objects.filter(id=thread.id).update(buyer_last_read_at=now)
+        elif request.user.id == thread.seller_id:
+            PrivateThread.objects.filter(id=thread.id).update(seller_last_read_at=now)
+        else:
+            return Response({"detail": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
+
+        thread.refresh_from_db(fields=["buyer_last_read_at", "seller_last_read_at", "updated_at"])
+        return Response(PrivateThreadSerializer(thread).data)
+
+
+class UserBlockViewSet(
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    permission_classes = [IsAuthenticated]
+    throttle_scope_map = {"POST": "messaging", "DELETE": "messaging"}
+
+    def get_queryset(self):
+        return UserBlock.objects.select_related("blocked").filter(blocker=self.request.user)
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return UserBlockCreateSerializer
+        return UserBlockSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = UserBlockCreateSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+
+        blocked_user_id = serializer.validated_data["blocked_user_id"]
+
+        blocked = User.objects.filter(id=blocked_user_id).first()
+        if not blocked:
+            raise ValidationError({"blocked_user_id": "User not found"})
+
+        if blocked.id == request.user.id:
+            raise ValidationError({"blocked_user_id": "Cannot block yourself"})
+
+        block, created = UserBlock.objects.get_or_create(blocker=request.user, blocked=blocked)
+        data = UserBlockSerializer(block, context={"request": request}).data
+        return Response(data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+    def perform_create(self, serializer):
+        blocked_user_id = serializer.validated_data["blocked_user_id"]
+
+        blocked = User.objects.filter(id=blocked_user_id).first()
+        if not blocked:
+            raise ValidationError({"blocked_user_id": "User not found"})
+
+        if blocked.id == self.request.user.id:
+            raise ValidationError({"blocked_user_id": "Cannot block yourself"})
+
+        UserBlock.objects.get_or_create(blocker=self.request.user, blocked=blocked)
+
+
+class ListingFavoriteViewSet(
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    permission_classes = [IsAuthenticated]
+    throttle_scope_map = {"POST": "write", "DELETE": "write"}
+
+    def get_queryset(self):
+        return ListingFavorite.objects.select_related("listing").filter(user=self.request.user)
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return ListingFavoriteCreateSerializer
+        return ListingFavoriteSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = ListingFavoriteCreateSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+
+        listing_id = serializer.validated_data["listing_id"]
+        listing = Listing.objects.filter(id=listing_id).first()
+        if not listing:
+            raise ValidationError({"listing_id": "Listing not found"})
+
+        # Prevent favoriting removed listings for non-staff.
+        if listing.is_removed and not getattr(request.user, "is_staff", False):
+            raise ValidationError({"listing_id": "Listing not found"})
+
+        fav, created = ListingFavorite.objects.get_or_create(user=request.user, listing=listing)
+        data = ListingFavoriteSerializer(fav, context={"request": request}).data
+        return Response(data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+
+class SavedSearchViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
+    serializer_class = SavedSearchSerializer
+    throttle_scope_map = {"POST": "write", "PATCH": "write", "PUT": "write", "DELETE": "write"}
+
+    def get_queryset(self):
+        return SavedSearch.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+    @action(detail=True, methods=["post"], url_path="check", permission_classes=[IsAuthenticated])
+    def check_now(self, request, pk=None):
+        saved = self.get_object()
+
+        params = saved.query_params or {}
+        if not isinstance(params, dict):
+            params = {}
+
+        user = request.user
+
+        qs = Listing.objects.all()
+        public_visibility = Q(
+            status=ListingStatus.PUBLISHED,
+            moderation_status=ModerationStatus.APPROVED,
+        )
+
+        if getattr(user, "is_staff", False):
+            qs = qs
+        else:
+            qs = qs.filter(public_visibility | Q(seller=user))
+
+        include_removed = str(params.get("include_removed") or "").lower() in {"1", "true", "yes"}
+        if not (include_removed and getattr(user, "is_staff", False)):
+            qs = qs.filter(is_removed=False)
+
+        if params.get("status"):
+            qs = qs.filter(status=params.get("status"))
+        if params.get("moderation_status"):
+            qs = qs.filter(moderation_status=params.get("moderation_status"))
+        if params.get("seller"):
+            qs = qs.filter(seller_id=params.get("seller"))
+
+        selected_category_obj = None
+        if params.get("category"):
+            raw = str(params.get("category") or "").strip()
+            try:
+                root_id = int(raw)
+            except Exception:
+                root_id = None
+
+            if root_id is not None:
+                selected_category_obj = Category.objects.filter(id=root_id).first()
+                ids: list[int] = [root_id]
+                frontier: list[int] = [root_id]
+                seen: set[int] = {root_id}
+                while frontier:
+                    child_ids = list(Category.objects.filter(parent_id__in=frontier).values_list("id", flat=True))
+                    frontier = []
+                    for cid in child_ids:
+                        if cid in seen:
+                            continue
+                        seen.add(cid)
+                        ids.append(cid)
+                        frontier.append(cid)
+                qs = qs.filter(category_id__in=ids)
+
+        if params.get("governorate"):
+            qs = qs.filter(governorate_id=params.get("governorate"))
+        if params.get("city"):
+            qs = qs.filter(city_id=params.get("city"))
+        if params.get("neighborhood"):
+            qs = qs.filter(neighborhood_id=params.get("neighborhood"))
+
+        raw_price_min = params.get("price_min") if params.get("price_min") is not None else params.get("price__gte")
+        raw_price_max = params.get("price_max") if params.get("price_max") is not None else params.get("price__lte")
+
+        if raw_price_min is not None and str(raw_price_min).strip() != "":
+            try:
+                price_min = Decimal(str(raw_price_min).strip())
+            except (InvalidOperation, ValueError):
+                raise ValidationError({"detail": "Invalid decimal for price_min"})
+            if price_min < 0:
+                raise ValidationError({"detail": "price_min cannot be negative"})
+            qs = qs.filter(price__gte=price_min)
+
+        if raw_price_max is not None and str(raw_price_max).strip() != "":
+            try:
+                price_max = Decimal(str(raw_price_max).strip())
+            except (InvalidOperation, ValueError):
+                raise ValidationError({"detail": "Invalid decimal for price_max"})
+            if price_max < 0:
+                raise ValidationError({"detail": "price_max cannot be negative"})
+            qs = qs.filter(price__lte=price_max)
+
+        if params.get("is_flagged") is not None:
+            raw = str(params.get("is_flagged") or "").lower()
+            if raw in {"1", "true", "yes"}:
+                qs = qs.filter(is_flagged=True)
+            elif raw in {"0", "false", "no"}:
+                qs = qs.filter(is_flagged=False)
+
+        if include_removed and getattr(user, "is_staff", False) and params.get("is_removed") is not None:
+            raw = str(params.get("is_removed") or "").lower()
+            if raw in {"1", "true", "yes"}:
+                qs = qs.filter(is_removed=True)
+            elif raw in {"0", "false", "no"}:
+                qs = qs.filter(is_removed=False)
+
+        attr_params = [(k, v) for k, v in params.items() if str(k).startswith("attr_")]
+        if attr_params:
+            if selected_category_obj is None:
+                raise ValidationError({"detail": "attr_* filters require category to be set"})
+
+            ancestor_ids = selected_category_obj.ancestor_ids_including_self()
+            order = list(reversed(ancestor_ids))
+            pos = {cid: idx for idx, cid in enumerate(order)}
+            defs = list(CategoryAttributeDefinition.objects.filter(category_id__in=ancestor_ids))
+            defs.sort(key=lambda d: (pos.get(d.category_id, 10_000), d.sort_order, d.key))
+            defs_by_key = {d.key: d for d in defs}
+
+            def parse_bool(s: str) -> bool:
+                ss = str(s).strip().lower()
+                if ss in {"1", "true", "yes", "y", "on"}:
+                    return True
+                if ss in {"0", "false", "no", "n", "off"}:
+                    return False
+                raise ValidationError({"detail": "Invalid boolean value"})
+
+            for idx, (raw_key, raw_val) in enumerate(attr_params):
+                name = str(raw_key)
+                raw_val = str(raw_val)
+                base = name[len("attr_") :]
+                if "__" in base:
+                    key, op = base.split("__", 1)
+                else:
+                    key, op = base, "eq"
+
+                d = defs_by_key.get(key)
+                if not d:
+                    raise ValidationError({"detail": f"Unknown attribute filter: {key}"})
+                if not d.is_filterable:
+                    raise ValidationError({"detail": f"Attribute is not filterable: {key}"})
+
+                value_qs = ListingAttributeValue.objects.filter(listing_id=OuterRef("pk"), definition=d)
+
+                if d.type == "int":
+                    try:
+                        num = int(raw_val)
+                    except Exception:
+                        raise ValidationError({"detail": f"Invalid integer for {key}"})
+                    if op == "eq":
+                        value_qs = value_qs.filter(int_value=num)
+                    elif op == "gte":
+                        value_qs = value_qs.filter(int_value__gte=num)
+                    elif op == "lte":
+                        value_qs = value_qs.filter(int_value__lte=num)
+                    elif op == "gt":
+                        value_qs = value_qs.filter(int_value__gt=num)
+                    elif op == "lt":
+                        value_qs = value_qs.filter(int_value__lt=num)
+                    else:
+                        raise ValidationError({"detail": f"Unsupported operator for {key}: {op}"})
+                elif d.type == "decimal":
+                    try:
+                        num = Decimal(raw_val)
+                    except Exception:
+                        raise ValidationError({"detail": f"Invalid decimal for {key}"})
+                    if op == "eq":
+                        value_qs = value_qs.filter(decimal_value=num)
+                    elif op == "gte":
+                        value_qs = value_qs.filter(decimal_value__gte=num)
+                    elif op == "lte":
+                        value_qs = value_qs.filter(decimal_value__lte=num)
+                    elif op == "gt":
+                        value_qs = value_qs.filter(decimal_value__gt=num)
+                    elif op == "lt":
+                        value_qs = value_qs.filter(decimal_value__lt=num)
+                    else:
+                        raise ValidationError({"detail": f"Unsupported operator for {key}: {op}"})
+                elif d.type == "bool":
+                    if op != "eq":
+                        raise ValidationError({"detail": f"Unsupported operator for {key}: {op}"})
+                    value_qs = value_qs.filter(bool_value=parse_bool(raw_val))
+                elif d.type == "enum":
+                    if op == "eq":
+                        value_qs = value_qs.filter(enum_value=str(raw_val))
+                    elif op == "in":
+                        items = [x.strip() for x in str(raw_val).split(",") if x.strip()]
+                        if not items:
+                            raise ValidationError({"detail": f"Invalid list for {key}"})
+                        value_qs = value_qs.filter(enum_value__in=items)
+                    else:
+                        raise ValidationError({"detail": f"Unsupported operator for {key}: {op}"})
+                elif d.type == "text":
+                    if op == "eq":
+                        value_qs = value_qs.filter(text_value=str(raw_val))
+                    elif op == "icontains":
+                        value_qs = value_qs.filter(text_value__icontains=str(raw_val))
+                    else:
+                        raise ValidationError({"detail": f"Unsupported operator for {key}: {op}"})
+                else:
+                    raise ValidationError({"detail": f"Unsupported attribute type for {key}"})
+
+                qs = qs.annotate(**{f"_has_attr_{idx}": Subquery(value_qs.values("id")[:1])}).filter(
+                    **{f"_has_attr_{idx}__isnull": False}
+                )
+
+        count = qs.count()
+        saved.last_checked_at = timezone.now()
+        saved.last_result_count = int(count)
+        saved.save(update_fields=["last_checked_at", "last_result_count", "updated_at"])
+
+        return Response(SavedSearchSerializer(saved).data)

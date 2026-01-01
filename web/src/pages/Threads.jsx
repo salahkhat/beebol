@@ -32,6 +32,7 @@ function getSeenAt(threadId) {
 
 function isUnread(thread) {
   if (!thread?.id) return false;
+  if (typeof thread?.unread_count === 'number') return thread.unread_count > 0;
   if (!thread?.last_message_at) return false;
   const seenAt = getSeenAt(thread.id);
   if (!seenAt) return true;
@@ -124,7 +125,12 @@ export function ThreadsPage() {
                         </Flex>
 
                         <Flex align="center" gap="2">
-                          {isUnread(thread) ? <Badge variant="warn">{t('messages_unread')}</Badge> : null}
+                          {isUnread(thread) ? (
+                            <Badge variant="warn">
+                              {t('messages_unread')}
+                              {typeof thread?.unread_count === 'number' && thread.unread_count > 0 ? ` (${thread.unread_count})` : ''}
+                            </Badge>
+                          ) : null}
                           <Icon icon={ChevronRight} size={16} className="text-[var(--gray-11)]" aria-label="" />
                         </Flex>
                       </Flex>

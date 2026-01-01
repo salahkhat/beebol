@@ -5,7 +5,7 @@ from .models import PrivateMessage, PrivateThread, PublicQuestion
 
 @admin.register(PublicQuestion)
 class PublicQuestionAdmin(admin.ModelAdmin):
-    list_display = ("id", "listing", "author", "created_at")
+    list_display = ("id", "listing", "author", "is_shadowed", "created_at")
     search_fields = ("question", "answer")
 
 
@@ -16,5 +16,5 @@ class PrivateThreadAdmin(admin.ModelAdmin):
 
 @admin.register(PrivateMessage)
 class PrivateMessageAdmin(admin.ModelAdmin):
-    list_display = ("id", "thread", "sender", "created_at")
+    list_display = ("id", "thread", "sender", "is_shadowed", "created_at")
     search_fields = ("body",)

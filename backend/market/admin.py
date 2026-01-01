@@ -1,6 +1,10 @@
-from django.contrib import admin
+from django.contrib import admin, messages
+from django.core.management import call_command
+from django.http import HttpResponseNotAllowed
+from django.shortcuts import redirect
+from django.urls import path
+
 from .models import AdminSeedJob, AdminSeedJobStatus
-# ...existing code...
 
 @admin.register(AdminSeedJob)
 class AdminSeedJobAdmin(admin.ModelAdmin):
@@ -21,11 +25,6 @@ class AdminSeedJobAdmin(admin.ModelAdmin):
             )
         self.message_user(request, "Seed job(s) enqueued.")
     enqueue_seed_listings_job.short_description = "Enqueue seed_listings job (slow, safe)"
-from django.contrib import admin, messages
-from django.core.management import call_command
-from django.http import HttpResponseNotAllowed
-from django.shortcuts import redirect
-from django.urls import path
 
 from .models import (
     Category,
@@ -35,7 +34,10 @@ from .models import (
     Listing,
     ListingAttributeValue,
     ListingImage,
+    ListingFavorite,
     Neighborhood,
+    Profile,
+    SavedSearch,
 )
 
 
@@ -186,3 +188,51 @@ class ListingAttributeValueAdmin(admin.ModelAdmin):
     list_display = ("id", "listing", "definition", "int_value", "decimal_value", "enum_value", "bool_value")
     list_filter = ("definition",)
     search_fields = ("definition__key", "enum_value", "text_value")
+
+
+@admin.register(ListingFavorite)
+class ListingFavoriteAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "listing", "created_at")
+    search_fields = ("user__username", "listing__title")
+    list_filter = ("created_at",)
+
+
+@admin.register(SavedSearch)
+class SavedSearchAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "name", "created_at", "last_checked_at", "last_result_count")
+    search_fields = ("user__username", "name")
+
+@admin.register(Profile)
+class ProfileAdmin(admin.ModelAdmin):
+    list_display = ("user", "display_name", "shadow_banned")
+    search_fields = ("user__username", "display_name")
+    list_filter = ("governorate", "city")
+    actions = ["mark_shadow_banned", "clear_shadow_banned"]
+
+    @admin.display(boolean=True)
+    def shadow_banned(self, obj: Profile) -> bool:
+        metadata = obj.metadata or {}
+        if not isinstance(metadata, dict):
+            return False
+        return bool(metadata.get("shadow_banned"))
+
+    @admin.action(description="Shadow-ban selected users")
+    def mark_shadow_banned(self, request, queryset):
+        for profile in queryset:
+            metadata = profile.metadata or {}
+            if not isinstance(metadata, dict):
+                metadata = {}
+            metadata["shadow_banned"] = True
+            profile.metadata = metadata
+            profile.save(update_fields=["metadata", "updated_at"])
+
+    @admin.action(description="Clear shadow-ban selected users")
+    def clear_shadow_banned(self, request, queryset):
+        for profile in queryset:
+            metadata = profile.metadata or {}
+            if not isinstance(metadata, dict):
+                metadata = {}
+            if "shadow_banned" in metadata:
+                metadata.pop("shadow_banned", None)
+                profile.metadata = metadata
+                profile.save(update_fields=["metadata", "updated_at"])

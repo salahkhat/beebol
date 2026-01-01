@@ -286,6 +286,53 @@ class Profile(TimestampedModel):
         return f"Profile({self.user_id})"
 
 
+# -- Personalization (favorites + saved searches) ---------------------------------
+
+
+class ListingFavorite(TimestampedModel):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="listing_favorites")
+    listing = models.ForeignKey(Listing, on_delete=models.CASCADE, related_name="favorited_by")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "listing"], name="uq_favorite_user_listing"),
+        ]
+        indexes = [
+            models.Index(fields=["user", "created_at"]),
+            models.Index(fields=["listing", "created_at"]),
+        ]
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"ListingFavorite({self.user_id},{self.listing_id})"
+
+
+class SavedSearch(TimestampedModel):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="saved_searches")
+    name = models.CharField(max_length=80)
+
+    # Persist either raw querystring or parsed params.
+    querystring = models.TextField(blank=True, default="")
+    query_params = models.JSONField(default=dict, blank=True)
+
+    notify_enabled = models.BooleanField(default=False)
+
+    last_checked_at = models.DateTimeField(null=True, blank=True)
+    last_result_count = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "name"], name="uq_savedsearch_user_name"),
+        ]
+        indexes = [
+            models.Index(fields=["user", "created_at"]),
+        ]
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"SavedSearch({self.user_id},{self.name})"
+
+
 class CategoryAttributeType(models.TextChoices):
     INT = "int", "Integer"
     DECIMAL = "decimal", "Decimal"

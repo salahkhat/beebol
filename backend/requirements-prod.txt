@@ -20,6 +20,9 @@ djangorestframework-simplejwt==5.3.1
 # Filtering
 django-filter==25.1
 
+# Image handling (required by Django ImageField)
+Pillow>=10,<11
+
 
 django-storages
 google-cloud-storage

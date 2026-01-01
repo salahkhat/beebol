@@ -24,7 +24,7 @@ import { formatDate } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { useI18n } from '../i18n/i18n';
 import { useToast } from '../ui/Toast';
-import { addSavedSearch, describeListingSearch } from '../lib/savedSearches';
+import { addSavedSearch, describeListingSearch, savedSearchParams } from '../lib/savedSearches';
 import { addWatch, listWatchlist, removeWatch } from '../lib/watchlist';
 import { normalizeMediaUrl } from '../lib/mediaUrl';
 import { useListingFilters } from '../lib/useListingFilters';
@@ -103,6 +103,11 @@ export function ListingsPage() {
   const [loading, setLoading] = useState(true);
   const [reloadNonce, setReloadNonce] = useState(0);
 
+  const [facets, setFacets] = useState({ loading: false, error: null, data: null });
+
+  const [trending, setTrending] = useState({ loading: false, error: null, items: [] });
+  const [newInCity, setNewInCity] = useState({ loading: false, error: null, items: [] });
+
   const [recentlyViewed, setRecentlyViewed] = useState(() => getRecentlyViewed());
 
   useEffect(() => {
@@ -156,6 +161,110 @@ export function ListingsPage() {
     };
   }, [params, sp, isAuthenticated, reloadNonce]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const handle = setTimeout(async () => {
+      try {
+        setFacets((p) => ({ ...p, loading: true, error: null }));
+
+        const attr = {};
+        for (const [k, v] of sp.entries()) {
+          if (!String(k).startsWith('attr_')) continue;
+          if (v == null || String(v) === '') continue;
+          attr[k] = String(v);
+        }
+
+        const data2 = await api.listingFacets({
+          search: params.search,
+          category: params.category,
+          governorate: params.governorate,
+          city: params.city,
+          neighborhood: params.neighborhood,
+          price_min: params.price_min,
+          price_max: params.price_max,
+          ...attr,
+        });
+        if (cancelled) return;
+        setFacets({ loading: false, error: null, data: data2 && typeof data2 === 'object' ? data2 : null });
+      } catch (e) {
+        if (cancelled) return;
+        setFacets({ loading: false, error: e, data: null });
+      }
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [sp, params.search, params.category, params.governorate, params.city, params.neighborhood, params.price_min, params.price_max]);
+
+  const facetCounts = useMemo(() => {
+    const out = { governorates: {}, cities: {} };
+    const d = facets.data;
+    if (!d || typeof d !== 'object') return out;
+
+    const govs2 = Array.isArray(d.governorates) ? d.governorates : [];
+    for (const g of govs2) {
+      const id = g && g.governorate_id != null ? String(g.governorate_id) : '';
+      const c = g && g.count != null ? Number(g.count) : NaN;
+      if (!id || !Number.isFinite(c)) continue;
+      out.governorates[id] = c;
+    }
+
+    const cities2 = Array.isArray(d.cities) ? d.cities : [];
+    for (const c2 of cities2) {
+      const id = c2 && c2.city_id != null ? String(c2.city_id) : '';
+      const c = c2 && c2.count != null ? Number(c2.count) : NaN;
+      if (!id || !Number.isFinite(c)) continue;
+      out.cities[id] = c;
+    }
+
+    return out;
+  }, [facets.data]);
+
+  const selectedCityLabel = useMemo(() => {
+    const id = String(params.city || '').trim();
+    if (!id) return '';
+    const c = Array.isArray(cities) ? cities.find((x) => String(x?.id) === id) : null;
+    if (!c) return '';
+    const ar = String(c.name_ar || '').trim();
+    const en = String(c.name_en || '').trim();
+    if (String(locale || '').startsWith('ar')) return ar || en || '';
+    return en || ar || '';
+  }, [params.city, cities, locale]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadDiscovery() {
+      const cityId = String(params.city || '').trim();
+      if (!cityId) {
+        setTrending({ loading: false, error: null, items: [] });
+        setNewInCity({ loading: false, error: null, items: [] });
+        return;
+      }
+
+      setTrending((p) => ({ ...p, loading: true, error: null }));
+      setNewInCity((p) => ({ ...p, loading: true, error: null }));
+
+      try {
+        const [tItems, nItems] = await Promise.all([
+          api.trendingListings({ city: cityId }),
+          api.newInCityListings({ city: cityId }),
+        ]);
+        if (cancelled) return;
+        setTrending({ loading: false, error: null, items: Array.isArray(tItems) ? tItems : [] });
+        setNewInCity({ loading: false, error: null, items: Array.isArray(nItems) ? nItems : [] });
+      } catch (e) {
+        if (cancelled) return;
+        setTrending((p) => ({ ...p, loading: false, error: e }));
+        setNewInCity((p) => ({ ...p, loading: false, error: e }));
+      }
+    }
+    loadDiscovery();
+    return () => {
+      cancelled = true;
+    };
+  }, [params.city]);
+
   const results = data?.results || [];
   const count = data?.count ?? 0;
 
@@ -179,7 +288,7 @@ export function ListingsPage() {
     setSp(next);
   }
 
-  function saveCurrentSearch() {
+  async function saveCurrentSearch() {
     const next = new URLSearchParams(sp);
     next.delete('page');
     const queryString = next.toString();
@@ -191,8 +300,24 @@ export function ListingsPage() {
       neighborhood: params.neighborhood,
       ordering: params.ordering,
     });
-    addSavedSearch({ name, queryString });
-    toast.push({ title: t('saved_searches_title'), description: t('saved_search_saved') });
+    try {
+      if (isAuthenticated) {
+        await api.createSavedSearch({
+          name,
+          querystring: queryString,
+          query_params: savedSearchParams(queryString),
+        });
+      } else {
+        addSavedSearch({ name, queryString });
+      }
+      toast.push({ title: t('saved_searches_title'), description: t('saved_search_saved') });
+    } catch (e) {
+      toast.push({
+        title: t('saved_searches_title'),
+        description: e instanceof ApiError ? e.message : String(e),
+        variant: 'error',
+      });
+    }
   }
 
   return (
@@ -344,6 +469,7 @@ export function ListingsPage() {
                 govs={govs}
                 cities={cities}
                 neighborhoods={neighborhoods}
+                facets={facetCounts}
                 uniqueAttrDefs={uniqueAttrDefs}
                 attrLabel={attrLabel}
                 searchDraft={searchDraft}
@@ -357,6 +483,158 @@ export function ListingsPage() {
         <div className={dir === 'rtl' ? 'order-2 md:order-1' : 'order-2'}>
           <Card>
             <CardBody>
+
+        {params.city ? (
+          <Card>
+            <CardHeader>
+              <Heading size="3">{t('discovery_new_in_city', { city: selectedCityLabel || '' })}</Heading>
+            </CardHeader>
+            <CardBody>
+              {newInCity.loading ? (
+                <Grid gap="3" columns={{ initial: '1', sm: '2', md: '3' }}>
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <Card key={i}>
+                      <Box p="4">
+                        <Flex gap="3" align="start">
+                          <Skeleton className="h-14 w-14 sm:h-16 sm:w-16" />
+                          <Flex direction="column" gap="2" style={{ minWidth: 0, flex: 1 }}>
+                            <Skeleton className="h-4 w-3/4" />
+                            <Skeleton className="h-3 w-40" />
+                          </Flex>
+                        </Flex>
+                      </Box>
+                    </Card>
+                  ))}
+                </Grid>
+              ) : (
+                <>
+                  <InlineError error={newInCity.error instanceof ApiError ? newInCity.error : newInCity.error} />
+                  {newInCity.items.length ? (
+                    <Grid gap="3" columns={{ initial: '1', sm: '2', md: '3' }}>
+                      {newInCity.items.slice(0, 6).map((r) => (
+                        <RTLink key={r.id} asChild underline="none" highContrast>
+                          <Link to={`/listings/${r.id}`}>
+                            <Card className="transition-colors hover:bg-[var(--gray-a2)]">
+                              <Box p="4">
+                                <Flex justify="between" gap="3" align="start">
+                                  <Flex gap="3" align="start" style={{ minWidth: 0, flex: 1 }}>
+                                    <ListingThumbnail
+                                      src={r.thumbnail}
+                                      alt={r.title || ''}
+                                      className="h-14 w-14 sm:h-16 sm:w-16"
+                                      placeholder={t('detail_noImages')}
+                                      ariaLabel={r.thumbnail ? t('open_image_preview') : t('detail_noImages')}
+                                      onClick={
+                                        r.thumbnail
+                                          ? (e) =>
+                                              openImagePreview(
+                                                { src: r.thumbnail, title: r.title || t('listing_number', { id: r.id }) },
+                                                e,
+                                              )
+                                          : undefined
+                                      }
+                                    />
+                                    <Flex direction="column" gap="1" style={{ minWidth: 0, flex: 1 }}>
+                                      <Text weight="bold" size="2" className="break-words whitespace-normal">
+                                        {r.title}
+                                      </Text>
+                                      <Text size="1" color="gray">
+                                        {Number(r.price) === 0 ? t('price_free') : formatMoney(r.price, r.currency)}
+                                      </Text>
+                                    </Flex>
+                                  </Flex>
+                                  <FavoriteButton listingId={r.id} />
+                                </Flex>
+                              </Box>
+                            </Card>
+                          </Link>
+                        </RTLink>
+                      ))}
+                    </Grid>
+                  ) : (
+                    <EmptyState icon={SearchX}>{t('listings_none')}</EmptyState>
+                  )}
+                </>
+              )}
+            </CardBody>
+          </Card>
+        ) : null}
+
+        {params.city ? (
+          <Card>
+            <CardHeader>
+              <Heading size="3">{t('discovery_trending')}</Heading>
+            </CardHeader>
+            <CardBody>
+              {trending.loading ? (
+                <Grid gap="3" columns={{ initial: '1', sm: '2', md: '3' }}>
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <Card key={i}>
+                      <Box p="4">
+                        <Flex gap="3" align="start">
+                          <Skeleton className="h-14 w-14 sm:h-16 sm:w-16" />
+                          <Flex direction="column" gap="2" style={{ minWidth: 0, flex: 1 }}>
+                            <Skeleton className="h-4 w-3/4" />
+                            <Skeleton className="h-3 w-40" />
+                          </Flex>
+                        </Flex>
+                      </Box>
+                    </Card>
+                  ))}
+                </Grid>
+              ) : (
+                <>
+                  <InlineError error={trending.error instanceof ApiError ? trending.error : trending.error} />
+                  {trending.items.length ? (
+                    <Grid gap="3" columns={{ initial: '1', sm: '2', md: '3' }}>
+                      {trending.items.slice(0, 6).map((r) => (
+                        <RTLink key={r.id} asChild underline="none" highContrast>
+                          <Link to={`/listings/${r.id}`}>
+                            <Card className="transition-colors hover:bg-[var(--gray-a2)]">
+                              <Box p="4">
+                                <Flex justify="between" gap="3" align="start">
+                                  <Flex gap="3" align="start" style={{ minWidth: 0, flex: 1 }}>
+                                    <ListingThumbnail
+                                      src={r.thumbnail}
+                                      alt={r.title || ''}
+                                      className="h-14 w-14 sm:h-16 sm:w-16"
+                                      placeholder={t('detail_noImages')}
+                                      ariaLabel={r.thumbnail ? t('open_image_preview') : t('detail_noImages')}
+                                      onClick={
+                                        r.thumbnail
+                                          ? (e) =>
+                                              openImagePreview(
+                                                { src: r.thumbnail, title: r.title || t('listing_number', { id: r.id }) },
+                                                e,
+                                              )
+                                          : undefined
+                                      }
+                                    />
+                                    <Flex direction="column" gap="1" style={{ minWidth: 0, flex: 1 }}>
+                                      <Text weight="bold" size="2" className="break-words whitespace-normal">
+                                        {r.title}
+                                      </Text>
+                                      <Text size="1" color="gray">
+                                        {Number(r.price) === 0 ? t('price_free') : formatMoney(r.price, r.currency)}
+                                      </Text>
+                                    </Flex>
+                                  </Flex>
+                                  <FavoriteButton listingId={r.id} />
+                                </Flex>
+                              </Box>
+                            </Card>
+                          </Link>
+                        </RTLink>
+                      ))}
+                    </Grid>
+                  ) : (
+                    <EmptyState icon={SearchX}>{t('listings_none')}</EmptyState>
+                  )}
+                </>
+              )}
+            </CardBody>
+          </Card>
+        ) : null}
               <Flex direction="column" gap="4">
                 <InlineError error={error instanceof ApiError ? error : error} onRetry={() => setReloadNonce((n) => n + 1)} />
 

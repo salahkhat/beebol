@@ -183,6 +183,9 @@ export const api = {
   neighborhoods: ({ city } = {}) => apiFetchJson(`api/v1/neighborhoods/${toQuery({ city })}`, { auth: false }),
 
   listings: (params = {}, { auth = false } = {}) => apiFetchJson(`api/v1/listings/${toQuery(params)}`, { auth }),
+  listingFacets: (params = {}) => apiFetchJson(`api/v1/listings/facets/${toQuery(params)}`, { auth: false }),
+  trendingListings: ({ city } = {}) => apiFetchJson(`api/v1/listings/trending/${toQuery({ city })}`, { auth: false }),
+  newInCityListings: ({ city } = {}) => apiFetchJson(`api/v1/listings/new-in-city/${toQuery({ city })}`, { auth: false }),
   listing: (id, { auth = false } = {}) => apiFetchJson(`api/v1/listings/${id}/`, { auth }),
   createListing: (data) => apiFetchJson('api/v1/listings/', { method: 'POST', body: data }),
   updateListing: (id, data) => apiFetchJson(`api/v1/listings/${id}/`, { method: 'PATCH', body: data }),
@@ -199,12 +202,28 @@ export const api = {
     fd.set('sort_order', String(sort_order));
     return apiFetchJson(`api/v1/listings/${id}/images/`, { method: 'POST', body: fd });
   },
+  uploadListingImagesBulk: (id, { files = [], alt_text = '' } = {}) => {
+    const fd = new FormData();
+    for (const f of files || []) fd.append('images', f);
+    if (alt_text) fd.set('alt_text', alt_text);
+    return apiFetchJson(`api/v1/listings/${id}/images/bulk/`, { method: 'POST', body: fd });
+  },
   deleteListingImage: (listingId, imageId) =>
     apiFetchJson(`api/v1/listings/${listingId}/images/${imageId}/`, { method: 'DELETE' }),
   reorderListingImages: (id, order) => apiFetchJson(`api/v1/listings/${id}/images/reorder/`, { method: 'POST', body: { order } }),
   myListings: (params = {}) => apiFetchJson(`api/v1/listings/mine/${toQuery(params)}`),
   moderateListing: (id, moderation_status) =>
     apiFetchJson(`api/v1/listings/${id}/moderate/`, { method: 'POST', body: { moderation_status } }),
+
+  favorites: () => apiFetchJson('api/v1/favorites/'),
+  addFavorite: (listing_id) => apiFetchJson('api/v1/favorites/', { method: 'POST', body: { listing_id } }),
+  removeFavorite: (favoriteId) => apiFetchJson(`api/v1/favorites/${favoriteId}/`, { method: 'DELETE' }),
+
+  savedSearches: () => apiFetchJson('api/v1/saved-searches/'),
+  createSavedSearch: (data) => apiFetchJson('api/v1/saved-searches/', { method: 'POST', body: data }),
+  updateSavedSearch: (id, patch) => apiFetchJson(`api/v1/saved-searches/${id}/`, { method: 'PATCH', body: patch }),
+  deleteSavedSearch: (id) => apiFetchJson(`api/v1/saved-searches/${id}/`, { method: 'DELETE' }),
+  checkSavedSearch: (id) => apiFetchJson(`api/v1/saved-searches/${id}/check/`, { method: 'POST' }),
 
   // Profile endpoints
   userProfile: (userId) => apiFetchJson(`api/v1/users/${userId}/profile/`),
@@ -226,8 +245,25 @@ export const api = {
   createThread: (listing_id) => apiFetchJson('api/v1/threads/', { method: 'POST', body: { listing_id } }),
   threadMessages: (id) => apiFetchJson(`api/v1/threads/${id}/messages/`),
   sendThreadMessage: (id, body) => apiFetchJson(`api/v1/threads/${id}/messages/`, { method: 'POST', body: { body } }),
+  markThreadRead: (id) => apiFetchJson(`api/v1/threads/${id}/read/`, { method: 'POST' }),
+
+  blocks: () => apiFetchJson('api/v1/blocks/'),
+  createBlock: (blocked_user_id) => apiFetchJson('api/v1/blocks/', { method: 'POST', body: { blocked_user_id } }),
+  deleteBlock: (id) => apiFetchJson(`api/v1/blocks/${id}/`, { method: 'DELETE' }),
 
   reports: (params = {}) => apiFetchJson(`api/v1/reports/${toQuery(params)}`),
   createReport: (data) => apiFetchJson('api/v1/reports/', { method: 'POST', body: data }),
-  updateReportStatus: (id, status) => apiFetchJson(`api/v1/reports/${id}/`, { method: 'PATCH', body: { status } }),
+  updateReportStatus: (id, status, staff_note) => apiFetchJson(`api/v1/reports/${id}/`, {
+    method: 'PATCH',
+    body: { status, ...(staff_note !== undefined ? { staff_note } : {}) },
+  }),
+  reportEvents: (id) => apiFetchJson(`api/v1/reports/${id}/events/`),
+
+  userReports: (params = {}) => apiFetchJson(`api/v1/user-reports/${toQuery(params)}`),
+  createUserReport: (data) => apiFetchJson('api/v1/user-reports/', { method: 'POST', body: data }),
+  updateUserReportStatus: (id, status, staff_note) => apiFetchJson(`api/v1/user-reports/${id}/`, {
+    method: 'PATCH',
+    body: { status, ...(staff_note !== undefined ? { staff_note } : {}) },
+  }),
+  userReportEvents: (id) => apiFetchJson(`api/v1/user-reports/${id}/events/`),
 };

@@ -6,6 +6,8 @@ import { api, ApiError } from '../lib/api';
 import { Card, CardBody, CardHeader } from '../ui/Card';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
+import { Select } from '../ui/Select';
+import { Textarea } from '../ui/Textarea';
 import { formatDate } from '../lib/format';
 import { Icon } from '../ui/Icon';
 import { useToast } from '../ui/Toast';
@@ -13,6 +15,9 @@ import { InlineError } from '../ui/InlineError';
 import { EmptyState } from '../ui/EmptyState';
 import { Skeleton } from '../ui/Skeleton';
 import { useI18n } from '../i18n/i18n';
+import { useAuth } from '../auth/AuthContext';
+
+const REPORT_REASONS = ['spam', 'scam', 'prohibited', 'duplicate', 'other'];
 
 const THREAD_SEEN_KEY = 'beebol.threadLastSeenAt';
 
@@ -33,6 +38,7 @@ export function ThreadDetailPage() {
   const { id } = useParams();
   const toast = useToast();
   const { t, dir } = useI18n();
+  const { user } = useAuth();
 
   function userLabel(userId) {
     return t('user_number', { id: userId });
@@ -47,6 +53,18 @@ export function ThreadDetailPage() {
   const [busy, setBusy] = useState(false);
   const [reloadNonce, setReloadNonce] = useState(0);
 
+  const [blocks, setBlocks] = useState([]);
+  const [blocking, setBlocking] = useState(false);
+
+  const [showReport, setShowReport] = useState(false);
+  const [reportReason, setReportReason] = useState('spam');
+  const [reportMessage, setReportMessage] = useState('');
+  const [reporting, setReporting] = useState(false);
+
+  const myId = user?.id;
+  const otherUserId = thread && myId ? (Number(thread.buyer) === Number(myId) ? thread.seller : thread.buyer) : null;
+  const otherBlocked = otherUserId ? blocks.find((b) => Number(b.blocked) === Number(otherUserId)) : null;
+
   const endRef = useRef(null);
   const didInitialScroll = useRef(false);
 
@@ -55,9 +73,20 @@ export function ThreadDetailPage() {
     else setLoading(true);
     setError(null);
     try {
-      const [threadRes, messagesRes] = await Promise.all([api.thread(id), api.threadMessages(id)]);
+      const [threadRes, messagesRes, blocksRes] = await Promise.all([api.thread(id), api.threadMessages(id), api.blocks()]);
       setThread(threadRes);
       setMessages(messagesRes);
+
+      const blockItems = Array.isArray(blocksRes) ? blocksRes : blocksRes?.results || [];
+      setBlocks(blockItems);
+
+      // Mark thread read on the server so unread state syncs across devices.
+      try {
+        const updated = await api.markThreadRead(id);
+        if (updated) setThread(updated);
+      } catch {
+        // ignore
+      }
 
       const last = Array.isArray(messagesRes) && messagesRes.length ? messagesRes[messagesRes.length - 1] : null;
       const lastIso = last?.created_at || threadRes?.last_message_at;
@@ -67,6 +96,63 @@ export function ThreadDetailPage() {
     } finally {
       if (soft) setRefreshing(false);
       else setLoading(false);
+    }
+  }
+
+  async function toggleBlock() {
+    if (!otherUserId) return;
+    setBlocking(true);
+    try {
+      if (otherBlocked?.id) {
+        await api.deleteBlock(otherBlocked.id);
+        setBlocks((prev) => prev.filter((b) => Number(b.id) !== Number(otherBlocked.id)));
+        toast.push({ title: t('block_title'), description: t('block_unblocked') });
+      } else {
+        const created = await api.createBlock(otherUserId);
+        // create endpoint is get_or_create; list is source of truth
+        if (created && typeof created === 'object') {
+          setBlocks((prev) => {
+            const next = Array.isArray(prev) ? [...prev] : [];
+            // Avoid duplicates
+            if (!next.some((b) => Number(b.blocked) === Number(otherUserId))) next.unshift(created);
+            return next;
+          });
+        } else {
+          const res = await api.blocks();
+          const items = Array.isArray(res) ? res : res?.results || [];
+          setBlocks(items);
+        }
+        toast.push({ title: t('block_title'), description: t('block_blocked') });
+      }
+    } catch (e) {
+      toast.push({ title: t('block_title'), description: e instanceof ApiError ? e.message : String(e), variant: 'error' });
+    } finally {
+      setBlocking(false);
+    }
+  }
+
+  async function submitUserReport() {
+    if (!otherUserId) return;
+    setReporting(true);
+    try {
+      await api.createUserReport({
+        reported: otherUserId,
+        thread: Number(id),
+        reason: reportReason,
+        message: String(reportMessage || '').trim(),
+      });
+      toast.push({ title: t('report_title'), description: t('report_submitted') });
+      setShowReport(false);
+      setReportReason('spam');
+      setReportMessage('');
+    } catch (e) {
+      toast.push({
+        title: t('report_title'),
+        description: e instanceof ApiError ? e.message : String(e),
+        variant: 'error',
+      });
+    } finally {
+      setReporting(false);
     }
   }
 
@@ -158,10 +244,71 @@ export function ThreadDetailPage() {
                 </Text>
               </Flex>
             </Button>
+
+            {otherUserId ? (
+              <Flex align="center" gap="2" wrap="wrap">
+                <Button variant="secondary" onClick={toggleBlock} disabled={blocking || loading}>
+                  <Text as="span" size="2">
+                    {otherBlocked ? t('unblock_user') : t('block_user')}
+                  </Text>
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => setShowReport((v) => !v)}
+                  disabled={loading || reporting}
+                >
+                  <Text as="span" size="2">
+                    {t('report_user')}
+                  </Text>
+                </Button>
+              </Flex>
+            ) : null}
           </Flex>
         </CardHeader>
         <CardBody>
           <InlineError error={error instanceof ApiError ? error : error} onRetry={() => setReloadNonce((n) => n + 1)} />
+
+          {showReport && otherUserId ? (
+            <Card>
+              <CardHeader>
+                <Text size="2" color="gray">
+                  {t('report_title')} · {userLabel(otherUserId)}
+                </Text>
+              </CardHeader>
+              <CardBody>
+                <Flex direction="column" gap="3">
+                  <Box>
+                    <Text size="2" color="gray">
+                      {t('report_reason')}
+                    </Text>
+                    <Select value={reportReason} onChange={(e) => setReportReason(e.target.value)}>
+                      {REPORT_REASONS.map((r) => (
+                        <option key={r} value={r}>
+                          {t(`report_reason_${r}`)}
+                        </option>
+                      ))}
+                    </Select>
+                  </Box>
+
+                  <Box>
+                    <Text size="2" color="gray">
+                      {t('report_details')}
+                    </Text>
+                    <Textarea value={reportMessage} onChange={(e) => setReportMessage(e.target.value)} rows={4} />
+                  </Box>
+
+                  <Flex align="center" gap="2" wrap="wrap">
+                    <Button onClick={submitUserReport} disabled={reporting}>
+                      {reporting ? t('submitting') : t('submit')}
+                    </Button>
+                    <Button variant="secondary" onClick={() => setShowReport(false)} disabled={reporting}>
+                      {t('cancel')}
+                    </Button>
+                  </Flex>
+                </Flex>
+              </CardBody>
+            </Card>
+          ) : null}
 
           {loading && messages.length === 0 ? (
             <Flex direction="column" gap="3" mt="4" className="bb-stagger">

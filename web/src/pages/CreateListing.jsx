@@ -458,10 +458,15 @@ export function CreateListingPage() {
       if (photos.length > 0) {
         setUploading(true);
         try {
-          // Upload sequentially to keep ordering and simplify error reporting.
-          for (let i = 0; i < photos.length; i++) {
-            const p = photos[i];
-            await api.uploadListingImage(created.id, { file: p.file, alt_text: p.altText || '', sort_order: i });
+          const hasAnyAlt = photos.some((p) => String(p?.altText || '').trim());
+          if (!hasAnyAlt && photos.length > 1) {
+            await api.uploadListingImagesBulk(created.id, { files: photos.map((p) => p.file).filter(Boolean) });
+          } else {
+            // Upload sequentially to keep per-image alt text and simplify error reporting.
+            for (let i = 0; i < photos.length; i++) {
+              const p = photos[i];
+              await api.uploadListingImage(created.id, { file: p.file, alt_text: p.altText || '', sort_order: i });
+            }
           }
         } finally {
           setUploading(false);

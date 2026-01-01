@@ -11,19 +11,52 @@ import { EmptyState } from '../ui/EmptyState';
 import { InlineError } from '../ui/InlineError';
 import { useI18n } from '../i18n/i18n';
 import { formatDate } from '../lib/format';
+import { getAccessToken } from '../lib/authStorage';
 import { listSavedSearches, markSavedSearchChecked, removeSavedSearch, savedSearchParams, toggleSavedSearchNotify } from '../lib/savedSearches';
 
 export function SavedSearchesPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
 
-  const [items, setItems] = useState(() => listSavedSearches());
+  const isAuthenticated = !!getAccessToken();
+  const [items, setItems] = useState(() => (isAuthenticated ? [] : listSavedSearches()));
   const [checkingId, setCheckingId] = useState(null);
   const [checkError, setCheckError] = useState(null);
 
   useEffect(() => {
-    setItems(listSavedSearches());
-  }, []);
+    let cancelled = false;
+
+    async function load() {
+      if (!isAuthenticated) {
+        setItems(listSavedSearches());
+        return;
+      }
+      try {
+        const res = await api.savedSearches();
+        if (cancelled) return;
+        const arr = Array.isArray(res?.results) ? res.results : Array.isArray(res) ? res : [];
+        setItems(
+          arr.map((x) => ({
+            id: String(x.id),
+            name: String(x.name || '').trim() || 'Saved search',
+            queryString: String(x.querystring || '').replace(/^\?/, ''),
+            createdAt: String(x.created_at || ''),
+            notifyEnabled: !!x.notify_enabled,
+            lastCheckedAt: String(x.last_checked_at || ''),
+            lastCount: typeof x.last_result_count === 'number' ? x.last_result_count : x.last_result_count == null ? null : Number(x.last_result_count),
+            lastDelta: null,
+          }))
+        );
+      } catch (e) {
+        if (!cancelled) setCheckError(e);
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
 
   const hasAny = items.length > 0;
 
@@ -36,10 +69,31 @@ export function SavedSearchesPage() {
     setCheckingId(search.id);
     setCheckError(null);
     try {
-      const params = savedSearchParams(search.queryString);
-      const res = await api.listings(params, { auth: false });
-      const c = res?.count ?? 0;
-      setItems(markSavedSearchChecked(search.id, c, search.lastCount));
+      if (isAuthenticated) {
+        const prevCount = search.lastCount;
+        const updated = await api.checkSavedSearch(search.id);
+        const nextCount = updated?.last_result_count ?? null;
+        const delta =
+          typeof prevCount === 'number' && typeof nextCount === 'number' ? Math.max(0, nextCount - prevCount) : null;
+
+        setItems((prev) =>
+          prev.map((s) =>
+            String(s.id) === String(search.id)
+              ? {
+                  ...s,
+                  lastCheckedAt: String(updated?.last_checked_at || ''),
+                  lastCount: typeof nextCount === 'number' ? nextCount : null,
+                  lastDelta: typeof delta === 'number' ? delta : null,
+                }
+              : s
+          )
+        );
+      } else {
+        const params = savedSearchParams(search.queryString);
+        const res = await api.listings(params, { auth: false });
+        const c = res?.count ?? 0;
+        setItems(markSavedSearchChecked(search.id, c, search.lastCount));
+      }
     } catch (e) {
       setCheckError(e);
     } finally {
@@ -103,7 +157,24 @@ export function SavedSearchesPage() {
                         <Button
                           size="sm"
                           variant="secondary"
-                          onClick={() => setItems(toggleSavedSearchNotify(s.id, !s.notifyEnabled))}
+                          onClick={async () => {
+                            if (isAuthenticated) {
+                              try {
+                                const updated = await api.updateSavedSearch(s.id, { notify_enabled: !s.notifyEnabled });
+                                setItems((prev) =>
+                                  prev.map((it) =>
+                                    String(it.id) === String(s.id)
+                                      ? { ...it, notifyEnabled: !!updated?.notify_enabled }
+                                      : it
+                                  )
+                                );
+                              } catch (e) {
+                                setCheckError(e);
+                              }
+                            } else {
+                              setItems(toggleSavedSearchNotify(s.id, !s.notifyEnabled));
+                            }
+                          }}
                           title={s.notifyEnabled ? t('saved_search_notify_off') : t('saved_search_notify_on')}
                         >
                           <Flex align="center" gap="2">
@@ -137,8 +208,17 @@ export function SavedSearchesPage() {
                         size="sm"
                         variant="secondary"
                         className="px-2"
-                        onClick={() => {
-                          setItems(removeSavedSearch(s.id));
+                        onClick={async () => {
+                          if (isAuthenticated) {
+                            try {
+                              await api.deleteSavedSearch(s.id);
+                              setItems((prev) => prev.filter((x) => String(x.id) !== String(s.id)));
+                            } catch (e) {
+                              setCheckError(e);
+                            }
+                          } else {
+                            setItems(removeSavedSearch(s.id));
+                          }
                         }}
                         title={t('delete')}
                         aria-label={t('delete')}

@@ -1,6 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+
+from .auth_views import ThrottledTokenObtainPairView, ThrottledTokenRefreshView
 
 from .views import (
     AdminSeedView,
@@ -16,6 +17,10 @@ from .views import (
     PublicQuestionViewSet,
     RegisterView,
     ListingReportViewSet,
+    UserReportViewSet,
+    UserBlockViewSet,
+    ListingFavoriteViewSet,
+    SavedSearchViewSet,
     UserProfileView,
     MeProfileView,
     AvatarUploadView,
@@ -31,14 +36,18 @@ router.register(r"listings", ListingViewSet, basename="listing")
 router.register(r"questions", PublicQuestionViewSet, basename="question")
 router.register(r"threads", PrivateThreadViewSet, basename="thread")
 router.register(r"reports", ListingReportViewSet, basename="report")
+router.register(r"user-reports", UserReportViewSet, basename="user-report")
+router.register(r"blocks", UserBlockViewSet, basename="block")
+router.register(r"favorites", ListingFavoriteViewSet, basename="favorite")
+router.register(r"saved-searches", SavedSearchViewSet, basename="saved-search")
 
 urlpatterns = [
     path("health/", HealthView.as_view(), name="v1-health"),
     path("admin/seed/", AdminSeedView.as_view(), name="v1-admin-seed"),
     path("admin/seed/jobs/<int:job_id>/", AdminSeedJobView.as_view(), name="v1-admin-seed-job"),
     path("auth/register/", RegisterView.as_view(), name="v1-register"),
-    path("auth/token/", TokenObtainPairView.as_view(), name="v1-token-obtain-pair"),
-    path("auth/token/refresh/", TokenRefreshView.as_view(), name="v1-token-refresh"),
+    path("auth/token/", ThrottledTokenObtainPairView.as_view(), name="v1-token-obtain-pair"),
+    path("auth/token/refresh/", ThrottledTokenRefreshView.as_view(), name="v1-token-refresh"),
     path("me/", MeView.as_view(), name="v1-me"),
     path("users/<int:user_id>/profile/", UserProfileView.as_view(), name="v1-user-profile"),
     path("me/profile/", MeProfileView.as_view(), name="v1-me-profile"),

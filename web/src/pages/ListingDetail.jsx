@@ -457,16 +457,18 @@ export function ListingDetailPage() {
     if (!isOwner || !data?.id || !uploadFiles.length) return;
     setUploading(true);
     try {
-      let nextSort = Array.isArray(images) ? images.length : 0;
-      const created = [];
-      for (const file of uploadFiles) {
+      let created = [];
+      if (uploadFiles.length > 1) {
+        const res = await api.uploadListingImagesBulk(id, { files: uploadFiles, alt_text: uploadAlt || '' });
+        created = Array.isArray(res) ? res : [];
+      } else {
+        const nextSort = Array.isArray(images) ? images.length : 0;
         const img = await api.uploadListingImage(id, {
-          file,
+          file: uploadFiles[0],
           alt_text: uploadAlt || '',
           sort_order: nextSort,
         });
-        created.push(img);
-        nextSort += 1;
+        created = [img];
       }
 
       setImages((prev) => {

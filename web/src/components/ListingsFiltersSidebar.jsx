@@ -17,6 +17,7 @@ export function ListingsFiltersSidebar({
   govs,
   cities,
   neighborhoods,
+  facets,
   uniqueAttrDefs,
   attrLabel,
   searchDraft,
@@ -27,6 +28,13 @@ export function ListingsFiltersSidebar({
   const filtersWrapClass = classNames?.filtersWrapClass || 'bb-filters';
   const filterSectionClass = classNames?.filterSectionClass || 'bb-filter-section';
   const filterControlClass = classNames?.filterControlClass || 'bb-filter-control';
+
+  function withCount(label, count) {
+    const c = Number(count);
+    if (!Number.isFinite(c)) return label;
+    if (c <= 0) return label;
+    return `${label} (${c})`;
+  }
 
   return (
     <Card>
@@ -117,7 +125,7 @@ export function ListingsFiltersSidebar({
                   <option value="">{t('listings_governorate')}</option>
                   {govs.map((g) => (
                     <option key={g.id} value={String(g.id)}>
-                      {g.name_ar || g.name_en}
+                      {withCount(g.name_ar || g.name_en, facets?.governorates?.[String(g.id)])}
                     </option>
                   ))}
                 </Select>
@@ -141,7 +149,7 @@ export function ListingsFiltersSidebar({
                   <option value="">{t('listings_city')}</option>
                   {cities.map((c) => (
                     <option key={c.id} value={String(c.id)}>
-                      {c.name_ar || c.name_en}
+                      {withCount(c.name_ar || c.name_en, facets?.cities?.[String(c.id)])}
                     </option>
                   ))}
                 </Select>
