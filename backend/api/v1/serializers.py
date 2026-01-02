@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.conf import settings
 from django.utils import timezone
 
 from datetime import timedelta
@@ -27,6 +28,7 @@ from market.models import (
     Neighborhood,
     ListingFavorite,
     SavedSearch,
+    ListingWatch,
 )
 from messaging.models import PrivateMessage, PrivateThread, PublicQuestion, UserBlock
 from notifications.models import Notification, NotificationPreference
@@ -80,6 +82,47 @@ def looks_like_contact_info(text: str) -> bool:
     if digits.startswith("00963") and len(digits) >= 13:
         return True
     if "+" in normalized and len(digits) >= 10:
+        return True
+
+    return False
+
+
+def _normalize_spam_text(text: str) -> str:
+    if not text:
+        return ""
+    normalized = str(text).lower().translate(_ARABIC_INDIC_DIGITS)
+    tokens = re.findall(r"[0-9a-z\u0600-\u06FF]+", normalized)
+    return " ".join(tokens)
+
+
+def looks_like_repeated_text(text: str) -> bool:
+    if not text:
+        return False
+
+    raw = str(text)
+    if len(raw) < 40:
+        return False
+
+    normalized = _normalize_spam_text(raw)
+    tokens = normalized.split()
+    if len(tokens) < 10:
+        return False
+
+    unique_count = len(set(tokens))
+    ratio = unique_count / max(1, len(tokens))
+    if ratio < 0.3:
+        return True
+
+    # Also catch extreme repetition of a single token.
+    counts: dict[str, int] = {}
+    for t in tokens:
+        counts[t] = counts.get(t, 0) + 1
+    if counts and max(counts.values()) >= 8:
+        return True
+
+    # Catch repeated single-character spam (e.g. "هههههههه..." or "!!!!!!...").
+    collapsed = re.sub(r"\s+", "", raw)
+    if len(collapsed) >= 60 and len(set(collapsed)) <= 3:
         return True
 
     return False
@@ -326,8 +369,8 @@ class ListingImageSerializer(serializers.ModelSerializer):
             return value
 
         # Enforce a minimal resolution to filter out tiny/low-quality uploads.
-        min_w = 400
-        min_h = 400
+        min_w = int(getattr(settings, "LISTING_IMAGE_MIN_WIDTH", 400) or 400)
+        min_h = int(getattr(settings, "LISTING_IMAGE_MIN_HEIGHT", 400) or 400)
 
         try:
             pos = value.tell()
@@ -379,6 +422,9 @@ class ListingListSerializer(serializers.ModelSerializer):
     seller_id = serializers.IntegerField(source="seller.id", read_only=True)
     seller_username = serializers.CharField(source="seller.username", read_only=True)
     thumbnail = serializers.SerializerMethodField()
+    view_count = serializers.SerializerMethodField()
+    favorites_count = serializers.SerializerMethodField()
+    messages_count = serializers.SerializerMethodField()
     category = CategorySerializer(read_only=True)
     governorate = GovernorateSerializer(read_only=True)
     city = CitySerializer(read_only=True)
@@ -403,6 +449,30 @@ class ListingListSerializer(serializers.ModelSerializer):
         except Exception:
             return None
 
+    def get_view_count(self, obj):
+        try:
+            return int(getattr(obj, "view_count", 0) or 0)
+        except Exception:
+            return 0
+
+    def get_favorites_count(self, obj):
+        try:
+            v = getattr(obj, "favorites_count", None)
+            if v is None:
+                return 0
+            return int(v or 0)
+        except Exception:
+            return 0
+
+    def get_messages_count(self, obj):
+        try:
+            v = getattr(obj, "messages_count", None)
+            if v is None:
+                return 0
+            return int(v or 0)
+        except Exception:
+            return 0
+
     class Meta:
         model = Listing
         fields = [
@@ -411,6 +481,9 @@ class ListingListSerializer(serializers.ModelSerializer):
             "seller_id",
             "seller_username",
             "thumbnail",
+            "view_count",
+            "favorites_count",
+            "messages_count",
             "price",
             "currency",
             "status",
@@ -489,6 +562,38 @@ class ListingWriteSerializer(serializers.ModelSerializer):
 
         if neighborhood and not city:
             raise serializers.ValidationError({"neighborhood": "City is required when neighborhood is set"})
+
+        # Listing quality enforcement when publishing.
+        # Sellers should not be able to publish empty/low-quality listings.
+        final_status = attrs.get("status") or getattr(self.instance, "status", None)
+        if final_status == ListingStatus.PUBLISHED:
+            min_images = int(getattr(settings, "LISTING_MIN_IMAGES_PUBLISH", 1) or 1)
+            min_title_len = int(getattr(settings, "LISTING_MIN_TITLE_LEN", 5) or 5)
+            min_desc_len = int(getattr(settings, "LISTING_MIN_DESCRIPTION_LEN", 10) or 10)
+
+            title = (attrs.get("title") if attrs.get("title") is not None else getattr(self.instance, "title", ""))
+            title = (title or "").strip()
+            if len(title) < min_title_len:
+                raise serializers.ValidationError({"title": "Title is too short"})
+
+            description = (
+                attrs.get("description")
+                if attrs.get("description") is not None
+                else getattr(self.instance, "description", "")
+            )
+            description = (description or "").strip()
+            if len(description) < min_desc_len:
+                raise serializers.ValidationError({"description": "Description is required"})
+
+            img_count = 0
+            if self.instance is not None:
+                try:
+                    img_count = self.instance.images.count()
+                except Exception:
+                    img_count = 0
+
+            if img_count < min_images:
+                raise serializers.ValidationError({"images": f"At least {min_images} image(s) is required"})
 
         category = attrs.get("category") or getattr(self.instance, "category", None)
         if category is not None:
@@ -680,7 +785,44 @@ class PublicQuestionCreateSerializer(serializers.ModelSerializer):
             return value
         if looks_like_contact_info(value):
             raise serializers.ValidationError("Phone numbers and contact info are not allowed in questions")
+        if looks_like_repeated_text(value):
+            raise serializers.ValidationError("Repeated text is not allowed")
         return value
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        request = self.context.get("request")
+        if not request or not getattr(request, "user", None) or not request.user.is_authenticated:
+            return attrs
+        if getattr(request.user, "is_staff", False):
+            return attrs
+
+        listing = attrs.get("listing") or self.context.get("listing")
+        if not listing:
+            return attrs
+
+        now = timezone.now()
+
+        cooldown_seconds = int(getattr(settings, "SPAM_QUESTION_COOLDOWN_SECONDS", 10) or 0)
+        if cooldown_seconds > 0:
+            since = now - timedelta(seconds=cooldown_seconds)
+            if PublicQuestion.objects.filter(listing=listing, author=request.user, created_at__gte=since).exists():
+                raise serializers.ValidationError({"question": "Please wait a moment before posting another question"})
+
+        duplicate_window_seconds = int(getattr(settings, "SPAM_DUPLICATE_QUESTION_WINDOW_SECONDS", 60) or 0)
+        if duplicate_window_seconds > 0:
+            since = now - timedelta(seconds=duplicate_window_seconds)
+            recent = (
+                PublicQuestion.objects.filter(listing=listing, author=request.user, created_at__gte=since)
+                .order_by("-created_at")
+                .only("question")[:5]
+            )
+            new_norm = _normalize_spam_text(attrs.get("question") or "")
+            for q in recent:
+                if _normalize_spam_text(q.question) == new_norm and new_norm:
+                    raise serializers.ValidationError({"question": "Please don't post the same question repeatedly"})
+
+        return attrs
 
     class Meta:
         model = PublicQuestion
@@ -697,6 +839,8 @@ class PublicQuestionAnswerSerializer(serializers.Serializer):
             return value
         if looks_like_contact_info(value):
             raise serializers.ValidationError("Phone numbers and contact info are not allowed in answers")
+        if looks_like_repeated_text(value):
+            raise serializers.ValidationError("Repeated text is not allowed")
         return value
 
 
@@ -709,6 +853,34 @@ class PrivateMessageCreateSerializer(serializers.Serializer):
             return value
         if looks_like_contact_info(value):
             raise serializers.ValidationError("Phone numbers and contact info are not allowed in messages")
+
+        if looks_like_repeated_text(value):
+            raise serializers.ValidationError("Repeated text is not allowed")
+
+        user = getattr(request, "user", None) if request else None
+        if user and getattr(user, "is_authenticated", False):
+            thread = self.context.get("thread")
+            now = timezone.now()
+
+            cooldown_seconds = int(getattr(settings, "SPAM_MESSAGE_COOLDOWN_SECONDS", 3) or 0)
+            if cooldown_seconds > 0 and thread is not None:
+                since = now - timedelta(seconds=cooldown_seconds)
+                if PrivateMessage.objects.filter(thread=thread, sender=user, created_at__gte=since).exists():
+                    raise serializers.ValidationError("Please wait a moment before sending another message")
+
+            duplicate_window_seconds = int(getattr(settings, "SPAM_DUPLICATE_MESSAGE_WINDOW_SECONDS", 60) or 0)
+            if duplicate_window_seconds > 0 and thread is not None:
+                since = now - timedelta(seconds=duplicate_window_seconds)
+                recent = (
+                    PrivateMessage.objects.filter(thread=thread, sender=user, created_at__gte=since)
+                    .order_by("-created_at")
+                    .only("body")[:5]
+                )
+                new_norm = _normalize_spam_text(value)
+                for m in recent:
+                    if _normalize_spam_text(m.body) == new_norm and new_norm:
+                        raise serializers.ValidationError("Please don't send the same message repeatedly")
+
         return value
 
 
@@ -778,8 +950,10 @@ class NotificationPreferenceSerializer(serializers.ModelSerializer):
         fields = [
             "inapp_private_message",
             "inapp_question_answered",
+            "inapp_listing_status",
             "email_private_message",
             "email_question_answered",
+            "email_listing_status",
         ]
 
 
@@ -1025,6 +1199,28 @@ class SavedSearchSerializer(serializers.ModelSerializer):
             "notify_enabled",
             "last_checked_at",
             "last_result_count",
+            "last_new_count",
             "created_at",
         ]
-        read_only_fields = ["id", "created_at", "last_checked_at", "last_result_count"]
+        read_only_fields = ["id", "created_at", "last_checked_at", "last_result_count", "last_new_count"]
+
+
+class ListingWatchSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ListingWatch
+        fields = [
+            "id",
+            "listing",
+            "created_at",
+            "last_seen_price",
+            "last_seen_currency",
+            "last_seen_at",
+        ]
+        read_only_fields = ["id", "created_at"]
+
+
+class ListingWatchCreateSerializer(serializers.Serializer):
+    listing_id = NonLeakyPrimaryKeyRelatedField(
+        queryset=Listing.objects.all(),
+        not_found_message="Listing not found",
+    )

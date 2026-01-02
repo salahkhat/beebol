@@ -220,6 +220,11 @@ export const api = {
   addFavorite: (listing_id) => apiFetchJson('api/v1/favorites/', { method: 'POST', body: { listing_id } }),
   removeFavorite: (favoriteId) => apiFetchJson(`api/v1/favorites/${favoriteId}/`, { method: 'DELETE' }),
 
+  watchlist: () => apiFetchJson('api/v1/watchlist/'),
+  addWatch: (listing_id) => apiFetchJson('api/v1/watchlist/', { method: 'POST', body: { listing_id } }),
+  removeWatch: (watchId) => apiFetchJson(`api/v1/watchlist/${watchId}/`, { method: 'DELETE' }),
+  markWatchSeen: (watchId) => apiFetchJson(`api/v1/watchlist/${watchId}/seen/`, { method: 'POST' }),
+
   savedSearches: () => apiFetchJson('api/v1/saved-searches/'),
   createSavedSearch: (data) => apiFetchJson('api/v1/saved-searches/', { method: 'POST', body: data }),
   updateSavedSearch: (id, patch) => apiFetchJson(`api/v1/saved-searches/${id}/`, { method: 'PATCH', body: patch }),

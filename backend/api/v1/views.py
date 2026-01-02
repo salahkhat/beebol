@@ -8,6 +8,12 @@ from django.utils import timezone
 from datetime import datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal, InvalidOperation
 import re
+
+try:
+    from PIL import Image
+except Exception:  # pragma: no cover
+    Image = None
+
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -35,6 +41,7 @@ from market.models import (
     ListingFavorite,
     SavedSearch,
     Profile,
+    ListingWatch,
 )
 from messaging.models import PrivateMessage, PrivateThread, PublicQuestion, UserBlock
 from notifications.models import Notification, NotificationKind, NotificationPreference
@@ -77,6 +84,8 @@ from .serializers import (
     SavedSearchSerializer,
     NotificationSerializer,
     NotificationPreferenceSerializer,
+    ListingWatchSerializer,
+    ListingWatchCreateSerializer,
 )
 
 User = get_user_model()
@@ -389,9 +398,6 @@ class AdminSeedView(APIView):
     def post(self, request):
         if not getattr(request.user, "is_staff", False):
             return Response({"detail": "Not allowed."}, status=status.HTTP_403_FORBIDDEN)
-
-        if not is_admin_seeding_enabled():
-            return Response({"detail": "Admin seeding is disabled."}, status=status.HTTP_403_FORBIDDEN)
 
         scenario = request.data.get("scenario", "demo")
         options = request.data.get("options", {})
@@ -919,6 +925,9 @@ class ListingViewSet(viewsets.ModelViewSet):
                     skipped.append({"id": listing.id, "reason": "publish_quality", "errors": errors})
                     continue
 
+            prev_ms = listing.moderation_status
+            prev_removed = bool(listing.is_removed)
+
             changed = False
             for k, v in update_kwargs.items():
                 if getattr(listing, k) != v:
@@ -928,6 +937,58 @@ class ListingViewSet(viewsets.ModelViewSet):
             if changed:
                 listing.save(update_fields=list(update_kwargs.keys()) + ["updated_at"])
                 updated_ids.append(listing.id)
+
+                # Notify seller for moderation/removal changes.
+                try:
+                    seller = getattr(listing, "seller", None)
+                    if seller is not None:
+                        prefs = _get_or_create_notification_preferences(seller)
+
+                        notify = False
+                        title = "Listing updated"
+                        body = "Your listing status was updated."
+
+                        if "moderation_status" in update_kwargs and prev_ms != listing.moderation_status:
+                            notify = True
+                            if listing.moderation_status == ModerationStatus.APPROVED:
+                                title = "Listing approved"
+                                body = "Your listing was approved."
+                            elif listing.moderation_status == ModerationStatus.REJECTED:
+                                title = "Listing rejected"
+                                body = "Your listing was rejected."
+
+                        if "is_removed" in update_kwargs and prev_removed != bool(listing.is_removed):
+                            notify = True
+                            if listing.is_removed:
+                                title = "Listing removed"
+                                body = "Your listing was removed."
+                            else:
+                                title = "Listing restored"
+                                body = "Your listing was restored."
+
+                        if notify and getattr(prefs, "inapp_listing_status", False):
+                            Notification.objects.create(
+                                user=seller,
+                                kind=NotificationKind.LISTING_STATUS,
+                                title=title,
+                                body=body,
+                                payload={
+                                    "listing_id": listing.id,
+                                    "moderation_status": listing.moderation_status,
+                                    "previous_moderation_status": prev_ms,
+                                    "is_removed": bool(listing.is_removed),
+                                    "previous_is_removed": prev_removed,
+                                },
+                            )
+
+                        if notify and getattr(prefs, "email_listing_status", False):
+                            _send_notification_email(
+                                to_user=seller,
+                                subject=title,
+                                message=body + " Open Beebol to view details.",
+                            )
+                except Exception:
+                    pass
 
         return Response({"updated": len(updated_ids), "updated_ids": updated_ids, "skipped": skipped, "not_found": not_found})
 
@@ -1365,6 +1426,10 @@ class ListingViewSet(viewsets.ModelViewSet):
             )
             .prefetch_related("images")
             .filter(seller=request.user, is_removed=False)
+            .annotate(
+                favorites_count=Count("favorited_by", distinct=True),
+                messages_count=Count("threads__messages", distinct=True),
+            )
         )
         page = self.paginate_queryset(qs)
         if page is not None:
@@ -1548,9 +1613,49 @@ class ListingViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+        prev_ms = listing.moderation_status
         if listing.moderation_status != desired:
             listing.moderation_status = desired
             listing.save(update_fields=["moderation_status"])
+
+            # Notify seller about moderation outcome.
+            try:
+                seller = getattr(listing, "seller", None)
+                if seller is not None:
+                    prefs = _get_or_create_notification_preferences(seller)
+
+                    title = "Listing updated"
+                    body = "Your listing status was updated."
+                    if desired == ModerationStatus.APPROVED:
+                        title = "Listing approved"
+                        body = "Your listing was approved."
+                    elif desired == ModerationStatus.REJECTED:
+                        title = "Listing rejected"
+                        body = "Your listing was rejected."
+
+                    if getattr(prefs, "inapp_listing_status", False):
+                        Notification.objects.create(
+                            user=seller,
+                            kind=NotificationKind.LISTING_STATUS,
+                            title=title,
+                            body=body,
+                            payload={
+                                "listing_id": listing.id,
+                                "moderation_status": desired,
+                                "previous_moderation_status": prev_ms,
+                                "is_removed": bool(listing.is_removed),
+                                "previous_is_removed": bool(listing.is_removed),
+                            },
+                        )
+
+                    if getattr(prefs, "email_listing_status", False):
+                        _send_notification_email(
+                            to_user=seller,
+                            subject=title,
+                            message=body + " Open Beebol to view details.",
+                        )
+            except Exception:
+                pass
 
         return Response(ListingDetailSerializer(listing).data)
 
@@ -1560,6 +1665,31 @@ class ListingViewSet(viewsets.ModelViewSet):
         if self.action == "retrieve":
             return ListingDetailSerializer
         return ListingListSerializer
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        data = serializer.data
+
+        # Lightweight view tracking for seller insights.
+        # Only count views for public listings, excluding the seller and staff.
+        try:
+            viewer = getattr(request, "user", None)
+            is_staff = bool(getattr(viewer, "is_staff", False)) if viewer else False
+            is_seller = bool(getattr(viewer, "is_authenticated", False) and viewer.id == instance.seller_id) if viewer else False
+
+            if (
+                not is_staff
+                and not is_seller
+                and instance.status == ListingStatus.PUBLISHED
+                and instance.moderation_status == ModerationStatus.APPROVED
+                and not instance.is_removed
+            ):
+                Listing.objects.filter(id=instance.id).update(view_count=F("view_count") + 1)
+        except Exception:
+            pass
+
+        return Response(data)
 
     def perform_create(self, serializer):
         serializer.save(seller=self.request.user)
@@ -1639,6 +1769,35 @@ class ListingViewSet(viewsets.ModelViewSet):
                 return Response({"detail": "File too large (max 8MB)"}, status=status.HTTP_400_BAD_REQUEST)
             if not str(getattr(f, "content_type", "")).startswith("image/"):
                 return Response({"detail": "Invalid file type"}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Enforce minimal image resolution (same intent as ListingImageSerializer.validate_image).
+            if Image is not None:
+                min_w = int(getattr(settings, "LISTING_IMAGE_MIN_WIDTH", 400) or 400)
+                min_h = int(getattr(settings, "LISTING_IMAGE_MIN_HEIGHT", 400) or 400)
+
+                try:
+                    pos = f.tell()
+                except Exception:
+                    pos = None
+
+                try:
+                    img = Image.open(f)
+                    w, h = img.size
+                    if w < min_w or h < min_h:
+                        return Response(
+                            {"detail": f"Image is too small (min {min_w}x{min_h})"},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                except Exception:
+                    return Response({"detail": "Invalid image"}, status=status.HTTP_400_BAD_REQUEST)
+                finally:
+                    try:
+                        if pos is not None:
+                            f.seek(pos)
+                        else:
+                            f.seek(0)
+                    except Exception:
+                        pass
 
             img = ListingImage.objects.create(
                 listing=listing,
@@ -1754,7 +1913,10 @@ class ListingViewSet(viewsets.ModelViewSet):
         ).exists():
             return Response({"detail": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
 
-        serializer = PublicQuestionCreateSerializer(data={**request.data, "listing": listing.id}, context={"request": request})
+        serializer = PublicQuestionCreateSerializer(
+            data={**request.data, "listing": listing.id},
+            context={"request": request, "listing": listing},
+        )
         serializer.is_valid(raise_exception=True)
         q = PublicQuestion.objects.create(
             listing=listing,
@@ -1826,7 +1988,7 @@ class PublicQuestionViewSet(mixins.RetrieveModelMixin, viewsets.GenericViewSet):
         ).exists():
             return Response({"detail": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
 
-        serializer = PublicQuestionAnswerSerializer(data=request.data, context={"request": request})
+        serializer = PublicQuestionAnswerSerializer(data=request.data, context={"request": request, "question": q})
         serializer.is_valid(raise_exception=True)
         q.answer = serializer.validated_data["answer"]
         q.answered_by = request.user
@@ -1952,7 +2114,7 @@ class PrivateThreadViewSet(viewsets.ModelViewSet):
         ).exists():
             return Response({"detail": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
 
-        serializer = PrivateMessageCreateSerializer(data=request.data, context={"request": request})
+        serializer = PrivateMessageCreateSerializer(data=request.data, context={"request": request, "thread": thread})
         serializer.is_valid(raise_exception=True)
         msg = PrivateMessage.objects.create(
             thread=thread,
@@ -2362,8 +2524,94 @@ class SavedSearchViewSet(viewsets.ModelViewSet):
                 )
 
         count = qs.count()
+
+        prev_checked_at = saved.last_checked_at
+        if prev_checked_at:
+            new_count = qs.filter(created_at__gt=prev_checked_at).count()
+        else:
+            new_count = count
+
         saved.last_checked_at = timezone.now()
         saved.last_result_count = int(count)
-        saved.save(update_fields=["last_checked_at", "last_result_count", "updated_at"])
+        saved.last_new_count = int(new_count)
+        saved.save(update_fields=["last_checked_at", "last_result_count", "last_new_count", "updated_at"])
 
         return Response(SavedSearchSerializer(saved).data)
+
+
+class WatchlistViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, mixins.DestroyModelMixin, viewsets.GenericViewSet):
+    permission_classes = [IsAuthenticated]
+    serializer_class = ListingWatchSerializer
+    throttle_scope_map = {"POST": "write", "DELETE": "write"}
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = ListingWatch.objects.select_related("listing").filter(user=user)
+
+        # For non-staff, only list watches for publicly visible listings.
+        if getattr(self, "action", None) == "list" and not getattr(user, "is_staff", False):
+            qs = qs.filter(
+                listing__is_removed=False,
+                listing__status=ListingStatus.PUBLISHED,
+                listing__moderation_status=ModerationStatus.APPROVED,
+            )
+
+        return qs
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return ListingWatchCreateSerializer
+        return ListingWatchSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = ListingWatchCreateSerializer(data=request.data, context={"request": request})
+        try:
+            serializer.is_valid(raise_exception=True)
+        except ValidationError as exc:
+            detail = getattr(exc, "detail", None)
+            if isinstance(detail, dict) and "listing_id" in detail:
+                msg = ""
+                try:
+                    raw = detail.get("listing_id")
+                    if isinstance(raw, (list, tuple)) and raw:
+                        msg = str(raw[0])
+                    else:
+                        msg = str(raw)
+                except Exception:
+                    msg = ""
+                if "not found" in msg.lower():
+                    return Response({"detail": "Listing not found"}, status=status.HTTP_404_NOT_FOUND)
+            raise
+
+        listing = serializer.validated_data["listing_id"]
+
+        # For non-staff, only allow watching publicly visible listings.
+        if not getattr(request.user, "is_staff", False):
+            if (
+                listing.is_removed
+                or listing.status != ListingStatus.PUBLISHED
+                or listing.moderation_status != ModerationStatus.APPROVED
+            ):
+                return Response({"detail": "Listing not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        watch, created = ListingWatch.objects.get_or_create(user=request.user, listing=listing)
+        watch.last_seen_price = listing.price
+        watch.last_seen_currency = listing.currency or ""
+        watch.last_seen_at = timezone.now()
+        watch.save(update_fields=["last_seen_price", "last_seen_currency", "last_seen_at", "updated_at"])
+
+        data = ListingWatchSerializer(watch, context={"request": request}).data
+        return Response(data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="seen", permission_classes=[IsAuthenticated])
+    def mark_seen(self, request, pk=None):
+        watch = self.get_object()
+        listing = getattr(watch, "listing", None)
+        if listing is None:
+            return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        watch.last_seen_price = listing.price
+        watch.last_seen_currency = listing.currency or ""
+        watch.last_seen_at = timezone.now()
+        watch.save(update_fields=["last_seen_price", "last_seen_currency", "last_seen_at", "updated_at"])
+        return Response(ListingWatchSerializer(watch, context={"request": request}).data)

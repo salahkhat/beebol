@@ -16,7 +16,9 @@ class NotificationPreferenceAdmin(admin.ModelAdmin):
         "user",
         "inapp_private_message",
         "inapp_question_answered",
+        "inapp_listing_status",
         "email_private_message",
         "email_question_answered",
+        "email_listing_status",
     )
     search_fields = ("user__username",)

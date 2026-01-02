@@ -3,6 +3,18 @@ import time
 import uuid
 
 
+def _get_client_ip(request) -> str | None:
+    # Prefer X-Forwarded-For when behind a proxy (e.g., Render).
+    # We do not validate proxy trust here; this is best-effort for logging only.
+    xff = request.META.get("HTTP_X_FORWARDED_FOR")
+    if xff:
+        # XFF format: client, proxy1, proxy2
+        ip = str(xff).split(",")[0].strip()
+        return ip or None
+    ip = request.META.get("REMOTE_ADDR")
+    return str(ip).strip() if ip else None
+
+
 logger = logging.getLogger("beebol.request")
 
 
@@ -60,13 +72,33 @@ class RequestIdAndLoggingMiddleware:
             except Exception:
                 user_id = None
 
+            view_name = None
+            route = None
+            try:
+                match = getattr(request, "resolver_match", None)
+                if match is not None:
+                    view_name = getattr(match, "view_name", None)
+                    route = getattr(match, "route", None)
+            except Exception:
+                view_name = None
+                route = None
+
+            client_ip = None
+            try:
+                client_ip = _get_client_ip(request)
+            except Exception:
+                client_ip = None
+
             logger.info(
                 "request",
                 extra={
                     "request_id": request_id,
                     "user_id": user_id,
+                    "client_ip": client_ip,
                     "method": request.method,
                     "path": request.path,
+                    "view": view_name,
+                    "route": route,
                     "status_code": getattr(response, "status_code", None),
                     "duration_ms": round(duration_ms, 2),
                 },

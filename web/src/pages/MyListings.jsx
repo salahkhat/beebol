@@ -510,6 +510,11 @@ export function MyListingsPage() {
                                   {r.title}
                                 </Text>
                                 <Text size="2">{formatMoney(r.price, r.currency)}</Text>
+                                {typeof r.view_count === 'number' || typeof r.messages_count === 'number' || typeof r.favorites_count === 'number' ? (
+                                  <Text size="1" color="gray">
+                                    Views: {Number.isFinite(r.view_count) ? r.view_count : 0} · Messages: {Number.isFinite(r.messages_count) ? r.messages_count : 0} · Favorites: {Number.isFinite(r.favorites_count) ? r.favorites_count : 0}
+                                  </Text>
+                                ) : null}
                               </>
                             )}
                             <Text size="1" color="gray">

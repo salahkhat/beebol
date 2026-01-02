@@ -19,6 +19,9 @@ function notificationLink(n) {
   if (n?.kind === 'question_answered' && payload.listing_id) {
     return { to: `/listings/${payload.listing_id}`, labelKey: 'notifications_open_listing' };
   }
+  if (n?.kind === 'listing_status' && payload.listing_id) {
+    return { to: `/listings/${payload.listing_id}`, labelKey: 'notifications_open_listing' };
+  }
   return null;
 }
 
@@ -70,6 +73,7 @@ export function NotificationsPage() {
     if (n.title) return String(n.title);
     if (n.kind === 'private_message') return t('notifications_kind_private_message');
     if (n.kind === 'question_answered') return t('notifications_kind_question_answered');
+    if (n.kind === 'listing_status') return t('notifications_kind_listing_status');
     return t('notifications_kind_generic');
   }
 

@@ -22,6 +22,7 @@ from .views import (
     UserReportViewSet,
     UserBlockViewSet,
     ListingFavoriteViewSet,
+    WatchlistViewSet,
     SavedSearchViewSet,
     UserProfileView,
     MeProfileView,
@@ -43,6 +44,7 @@ router.register(r"reports", ListingReportViewSet, basename="report")
 router.register(r"user-reports", UserReportViewSet, basename="user-report")
 router.register(r"blocks", UserBlockViewSet, basename="block")
 router.register(r"favorites", ListingFavoriteViewSet, basename="favorite")
+router.register(r"watchlist", WatchlistViewSet, basename="watch")
 router.register(r"saved-searches", SavedSearchViewSet, basename="saved-search")
 router.register(r"notifications", NotificationViewSet, basename="notification")
 

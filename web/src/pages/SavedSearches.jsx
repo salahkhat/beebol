@@ -44,7 +44,7 @@ export function SavedSearchesPage() {
             notifyEnabled: !!x.notify_enabled,
             lastCheckedAt: String(x.last_checked_at || ''),
             lastCount: typeof x.last_result_count === 'number' ? x.last_result_count : x.last_result_count == null ? null : Number(x.last_result_count),
-            lastDelta: null,
+            lastDelta: typeof x.last_new_count === 'number' ? x.last_new_count : x.last_new_count == null ? null : Number(x.last_new_count),
           }))
         );
       } catch (e) {
@@ -70,11 +70,14 @@ export function SavedSearchesPage() {
     setCheckError(null);
     try {
       if (isAuthenticated) {
-        const prevCount = search.lastCount;
         const updated = await api.checkSavedSearch(search.id);
         const nextCount = updated?.last_result_count ?? null;
         const delta =
-          typeof prevCount === 'number' && typeof nextCount === 'number' ? Math.max(0, nextCount - prevCount) : null;
+          typeof updated?.last_new_count === 'number'
+            ? updated.last_new_count
+            : updated?.last_new_count == null
+              ? null
+              : Number(updated.last_new_count);
 
         setItems((prev) =>
           prev.map((s) =>

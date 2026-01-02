@@ -167,6 +167,10 @@ class Listing(TimestampedModel):
     is_flagged = models.BooleanField(default=False)
     is_removed = models.BooleanField(default=False)
 
+    # Lightweight counter for seller insights.
+    # Incremented on public listing detail views (excluding seller/staff).
+    view_count = models.PositiveIntegerField(default=0)
+
     class Meta:
         indexes = [
             models.Index(fields=["status", "created_at"]),
@@ -203,6 +207,21 @@ class ListingImage(TimestampedModel):
 
     def __str__(self) -> str:
         return f"ListingImage({self.listing_id})"
+
+
+class ListingWatch(TimestampedModel):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="watched_listings")
+    listing = models.ForeignKey(Listing, on_delete=models.CASCADE, related_name="watchers")
+
+    last_seen_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    last_seen_currency = models.CharField(max_length=8, blank=True, default="")
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "listing"], name="uq_watch_user_listing"),
+        ]
+        ordering = ["-created_at", "-id"]
 
 
 class AdminSeedJobStatus(models.TextChoices):
@@ -319,6 +338,7 @@ class SavedSearch(TimestampedModel):
 
     last_checked_at = models.DateTimeField(null=True, blank=True)
     last_result_count = models.IntegerField(null=True, blank=True)
+    last_new_count = models.IntegerField(null=True, blank=True)
 
     class Meta:
         constraints = [

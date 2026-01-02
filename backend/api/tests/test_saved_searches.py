@@ -1,5 +1,8 @@
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -110,6 +113,25 @@ class SavedSearchesApiTests(APITestCase):
         self.assertEqual(r4.status_code, status.HTTP_200_OK)
         self.assertIsNotNone(r4.data.get("last_checked_at"))
         self.assertEqual(r4.data.get("last_result_count"), 2)
+        self.assertEqual(r4.data.get("last_new_count"), 2)
+
+        # Add a new public-visible listing after the first check.
+        new_listing = Listing.objects.create(
+            seller=self.other,
+            title="Item3",
+            description="Desc",
+            category=self.category,
+            governorate=self.gov,
+            city=self.city,
+            status=ListingStatus.PUBLISHED,
+            moderation_status=ModerationStatus.APPROVED,
+        )
+        Listing.objects.filter(id=new_listing.id).update(created_at=timezone.now() + timedelta(seconds=2))
+
+        r4b = self.client.post(check_url, {}, format="json")
+        self.assertEqual(r4b.status_code, status.HTTP_200_OK)
+        self.assertEqual(r4b.data.get("last_result_count"), 3)
+        self.assertEqual(r4b.data.get("last_new_count"), 1)
 
         # Delete
         r5 = self.client.delete(detail_url)

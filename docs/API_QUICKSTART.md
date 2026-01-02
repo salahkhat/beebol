@@ -124,6 +124,11 @@ Authenticated sellers see public listings plus their own drafts.
 
 ## Listing Q&A (public questions)
 
+Anti-spam notes:
+- Phone numbers/contact info are rejected for non-staff.
+- Repeated/low-entropy text is rejected for non-staff.
+- Cooldowns/duplicate windows are configurable via env vars (see “Anti-spam configuration” below).
+
 ```bash
 # list questions
 curl -s http://127.0.0.1:8000/api/v1/listings/1/questions/
@@ -136,6 +141,11 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/listings/1/questions/ \
 ```
 
 ## Private messaging
+
+Anti-spam notes:
+- Phone numbers/contact info are rejected for non-staff.
+- Repeated/low-entropy text is rejected for non-staff.
+- Cooldowns/duplicate windows are configurable via env vars (see “Anti-spam configuration” below).
 
 ```bash
 # create/get a thread for a listing (requires auth)
@@ -238,6 +248,18 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/threads/1/report/ \
 
 ```bash
 # moderation queue (default: pending)
+
+## Anti-spam configuration
+
+These settings add server-side cooldowns and duplicate-message prevention (in addition to DRF throttling).
+Set them as environment variables for the backend service:
+
+- `SPAM_MESSAGE_COOLDOWN_SECONDS` (default: `2`)
+- `SPAM_DUPLICATE_MESSAGE_WINDOW_SECONDS` (default: `60`)
+- `SPAM_QUESTION_COOLDOWN_SECONDS` (default: `10`)
+- `SPAM_DUPLICATE_QUESTION_WINDOW_SECONDS` (default: `60`)
+
+Set any of these to `0` to disable that specific check.
 curl -s "http://127.0.0.1:8000/api/v1/listings/moderation_queue/" \
   -H "Authorization: Bearer $ACCESS_TOKEN"
 

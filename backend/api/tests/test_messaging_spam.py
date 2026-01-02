@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from django.test import override_settings
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -84,3 +85,61 @@ class MessagingSpamApiTests(APITestCase):
         r = self.client.post(url, {"question": "call me 0933333333"}, format="json")
         self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("question", r.data)
+
+    def test_send_message_rejects_repeated_text(self):
+        thread_id = self._create_thread()
+        url = reverse("thread-messages", kwargs={"pk": thread_id})
+        r = self.client.post(url, {"body": "hi " * 30}, format="json")
+        self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("body", r.data)
+
+    def test_question_rejects_repeated_text(self):
+        self.client.force_authenticate(self.buyer)
+        url = reverse("listing-questions", kwargs={"pk": self.listing.id})
+        r = self.client.post(url, {"question": "test " * 30}, format="json")
+        self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("question", r.data)
+
+    @override_settings(SPAM_MESSAGE_COOLDOWN_SECONDS=0, SPAM_DUPLICATE_MESSAGE_WINDOW_SECONDS=60)
+    def test_send_message_rejects_duplicate_text_in_window(self):
+        thread_id = self._create_thread()
+        url = reverse("thread-messages", kwargs={"pk": thread_id})
+        r1 = self.client.post(url, {"body": "hello there"}, format="json")
+        self.assertEqual(r1.status_code, status.HTTP_201_CREATED)
+
+        r2 = self.client.post(url, {"body": "hello there"}, format="json")
+        self.assertEqual(r2.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("body", r2.data)
+
+    @override_settings(SPAM_QUESTION_COOLDOWN_SECONDS=0, SPAM_DUPLICATE_QUESTION_WINDOW_SECONDS=60)
+    def test_question_rejects_duplicate_text_in_window(self):
+        self.client.force_authenticate(self.buyer)
+        url = reverse("listing-questions", kwargs={"pk": self.listing.id})
+        r1 = self.client.post(url, {"question": "is this available?"}, format="json")
+        self.assertEqual(r1.status_code, status.HTTP_201_CREATED)
+
+        r2 = self.client.post(url, {"question": "is this available?"}, format="json")
+        self.assertEqual(r2.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("question", r2.data)
+
+    @override_settings(SPAM_MESSAGE_COOLDOWN_SECONDS=3)
+    def test_send_message_enforces_cooldown(self):
+        thread_id = self._create_thread()
+        url = reverse("thread-messages", kwargs={"pk": thread_id})
+        r1 = self.client.post(url, {"body": "one"}, format="json")
+        self.assertEqual(r1.status_code, status.HTTP_201_CREATED)
+
+        r2 = self.client.post(url, {"body": "two"}, format="json")
+        self.assertEqual(r2.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("body", r2.data)
+
+    @override_settings(SPAM_QUESTION_COOLDOWN_SECONDS=10)
+    def test_question_enforces_cooldown(self):
+        self.client.force_authenticate(self.buyer)
+        url = reverse("listing-questions", kwargs={"pk": self.listing.id})
+        r1 = self.client.post(url, {"question": "q1"}, format="json")
+        self.assertEqual(r1.status_code, status.HTTP_201_CREATED)
+
+        r2 = self.client.post(url, {"question": "q2"}, format="json")
+        self.assertEqual(r2.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("question", r2.data)

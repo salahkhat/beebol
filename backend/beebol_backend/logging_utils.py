@@ -17,8 +17,11 @@ class JsonFormatter(logging.Formatter):
         for key in (
             "request_id",
             "user_id",
+            "client_ip",
             "method",
             "path",
+            "view",
+            "route",
             "status_code",
             "duration_ms",
         ):

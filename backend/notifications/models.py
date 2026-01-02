@@ -9,6 +9,7 @@ from market.models import TimestampedModel
 class NotificationKind(models.TextChoices):
     PRIVATE_MESSAGE = "private_message", "Private message"
     QUESTION_ANSWERED = "question_answered", "Question answered"
+    LISTING_STATUS = "listing_status", "Listing status"
 
 
 class Notification(TimestampedModel):
@@ -41,9 +42,11 @@ class NotificationPreference(TimestampedModel):
 
     inapp_private_message = models.BooleanField(default=True)
     inapp_question_answered = models.BooleanField(default=True)
+    inapp_listing_status = models.BooleanField(default=True)
 
     email_private_message = models.BooleanField(default=False)
     email_question_answered = models.BooleanField(default=False)
+    email_listing_status = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["user_id"]

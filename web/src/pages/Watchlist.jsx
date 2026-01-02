@@ -15,6 +15,7 @@ import { formatDate, formatMoney } from '../lib/format';
 import { useAuth } from '../auth/AuthContext';
 import { useI18n } from '../i18n/i18n';
 import { listWatchlist, removeWatch, updateWatchSnapshotFromListing } from '../lib/watchlist';
+import { onWatchlistChange } from '../lib/watchlist';
 
 function priceDeltaLabel({ prevPrice, prevCurrency, nextPrice, nextCurrency, t }) {
   if (prevPrice == null || nextPrice == null) return { kind: 'unknown', label: t('watch_price_unknown') };
@@ -50,6 +51,7 @@ export function WatchlistPage() {
 
   useEffect(() => {
     setWatchItems(listWatchlist());
+    return onWatchlistChange(() => setWatchItems(listWatchlist()));
   }, []);
 
   useEffect(() => {
