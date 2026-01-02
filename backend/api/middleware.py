@@ -25,6 +25,25 @@ class RequestIdAndLoggingMiddleware:
 
         response = self.get_response(request)
 
+        # Best-effort: ensure API error responses include request correlation fields
+        # even when views return Response(...) directly (bypassing DRF exception handler).
+        try:
+            status_code = getattr(response, "status_code", None)
+            if status_code is not None and int(status_code) >= 400 and request.path.startswith("/api/"):
+                data = getattr(response, "data", None)
+                if isinstance(data, dict):
+                    if request_id and "request_id" not in data:
+                        data["request_id"] = request_id
+
+                    if "detail" in data and "error" not in data:
+                        try:
+                            data["error"] = {"message": str(data.get("detail"))}
+                        except Exception:
+                            pass
+        except Exception:
+            # Never fail requests due to logging/envelope logic.
+            pass
+
         duration_ms = (time.perf_counter() - start) * 1000.0
 
         try:

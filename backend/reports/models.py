@@ -19,6 +19,14 @@ class ReportStatus(models.TextChoices):
     DISMISSED = "dismissed", "Dismissed"
 
 
+class ReportReason(models.TextChoices):
+    SPAM = "spam", "Spam"
+    SCAM = "scam", "Scam"
+    PROHIBITED = "prohibited", "Prohibited"
+    DUPLICATE = "duplicate", "Duplicate"
+    OTHER = "other", "Other"
+
+
 class ListingReport(TimestampedModel):
     listing = models.ForeignKey(
         "market.Listing",
@@ -31,7 +39,7 @@ class ListingReport(TimestampedModel):
         related_name="listing_reports",
     )
 
-    reason = models.CharField(max_length=40)
+    reason = models.CharField(max_length=40, choices=ReportReason.choices)
     message = models.TextField(blank=True)
 
     status = models.CharField(max_length=16, choices=ReportStatus.choices, default=ReportStatus.OPEN)
@@ -96,7 +104,7 @@ class UserReport(TimestampedModel):
         related_name="user_reports",
     )
 
-    reason = models.CharField(max_length=40)
+    reason = models.CharField(max_length=40, choices=ReportReason.choices)
     message = models.TextField(blank=True)
 
     status = models.CharField(max_length=16, choices=ReportStatus.choices, default=ReportStatus.OPEN)

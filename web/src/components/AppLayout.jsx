@@ -17,6 +17,7 @@ import {
   FileText,
   Eye,
   Users,
+  Bell,
 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { Button } from '../ui/Button';
@@ -372,6 +373,16 @@ export function AppLayout() {
                         <Icon icon={Bookmark} size={16} />
                         <Text as="span" size="2">
                           {t('nav_saved_searches')}
+                        </Text>
+                      </Flex>
+                    </Link>
+                  </DropdownItem>
+                  <DropdownItem asChild>
+                    <Link to="/notifications">
+                      <Flex align="center" gap="2">
+                        <Icon icon={Bell} size={16} />
+                        <Text as="span" size="2">
+                          {t('nav_notifications')}
                         </Text>
                       </Flex>
                     </Link>

@@ -186,6 +186,7 @@ export const api = {
   listingFacets: (params = {}) => apiFetchJson(`api/v1/listings/facets/${toQuery(params)}`, { auth: false }),
   trendingListings: ({ city } = {}) => apiFetchJson(`api/v1/listings/trending/${toQuery({ city })}`, { auth: false }),
   newInCityListings: ({ city } = {}) => apiFetchJson(`api/v1/listings/new-in-city/${toQuery({ city })}`, { auth: false }),
+  similarListings: (id) => apiFetchJson(`api/v1/listings/${id}/similar/`, { auth: false }),
   listing: (id, { auth = false } = {}) => apiFetchJson(`api/v1/listings/${id}/`, { auth }),
   createListing: (data) => apiFetchJson('api/v1/listings/', { method: 'POST', body: data }),
   updateListing: (id, data) => apiFetchJson(`api/v1/listings/${id}/`, { method: 'PATCH', body: data }),
@@ -266,4 +267,10 @@ export const api = {
     body: { status, ...(staff_note !== undefined ? { staff_note } : {}) },
   }),
   userReportEvents: (id) => apiFetchJson(`api/v1/user-reports/${id}/events/`),
+
+  notifications: () => apiFetchJson('api/v1/notifications/'),
+  markNotificationRead: (id) => apiFetchJson(`api/v1/notifications/${id}/read/`, { method: 'POST' }),
+  notificationPreferences: () => apiFetchJson('api/v1/me/notification-preferences/'),
+  updateNotificationPreferences: (patch) =>
+    apiFetchJson('api/v1/me/notification-preferences/', { method: 'PATCH', body: patch }),
 };

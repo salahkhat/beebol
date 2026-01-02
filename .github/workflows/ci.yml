@@ -9,7 +9,7 @@ on:
 
 jobs:
   backend:
-    name: Backend (migrate + smoke)
+    name: Backend (tests + smoke)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -29,6 +29,7 @@ jobs:
           cache: "pip"
           cache-dependency-path: |
             backend/requirements.txt
+            backend/requirements-dev.txt
             backend/setup.py
             backend/setup.cfg
 
@@ -36,6 +37,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Unit tests (pytest)
+        run: |
+          python -m pytest -q
 
       - name: Django checks
         run: |

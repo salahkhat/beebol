@@ -20,6 +20,7 @@ import { useAuth } from '../auth/AuthContext';
 import { useToast } from '../ui/Toast';
 import { useI18n } from '../i18n/i18n';
 import { FavoriteButton } from '../ui/FavoriteButton';
+import { ListingThumbnail } from '../ui/ListingThumbnail';
 import { pushRecentlyViewed } from '../lib/recentlyViewed';
 import { addCompareId, formatIdsParam } from '../lib/compare';
 import { addWatch, isWatched, removeWatch, updateWatchSnapshotFromListing } from '../lib/watchlist';
@@ -98,6 +99,8 @@ export function ListingDetailPage() {
   const [asking, setAsking] = useState(false);
   const [answeringId, setAnsweringId] = useState(null);
   const [answerDrafts, setAnswerDrafts] = useState(() => new Map());
+
+  const [similar, setSimilar] = useState({ loading: false, error: null, items: [] });
 
   const isOwner = !!user && !!data && data.seller_id === user.id;
 
@@ -321,6 +324,29 @@ export function ListingDetailPage() {
       cancelled = true;
     };
   }, [data?.id, isAuthenticated]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSimilar() {
+      if (!data?.id) {
+        setSimilar({ loading: false, error: null, items: [] });
+        return;
+      }
+      setSimilar({ loading: true, error: null, items: [] });
+      try {
+        const res = await api.similarListings(data.id);
+        if (cancelled) return;
+        setSimilar({ loading: false, error: null, items: Array.isArray(res) ? res : [] });
+      } catch (e) {
+        if (cancelled) return;
+        setSimilar({ loading: false, error: e, items: [] });
+      }
+    }
+    loadSimilar();
+    return () => {
+      cancelled = true;
+    };
+  }, [data?.id]);
 
   async function saveImageOrder(nextImages) {
     if (!isOwner) return;
@@ -1047,6 +1073,70 @@ export function ListingDetailPage() {
                   </CardBody>
                 </Card>
               ) : null}
+
+              <Card>
+                <CardHeader>
+                  <Heading size="3">{t('detail_similar')}</Heading>
+                </CardHeader>
+                <CardBody>
+                  <InlineError error={similar.error instanceof ApiError ? similar.error : similar.error} />
+
+                  {similar.loading ? (
+                    <Flex direction="column" gap="3">
+                      {Array.from({ length: 3 }).map((_, i) => (
+                        <Card key={i}>
+                          <Box p="4">
+                            <Flex gap="3" align="start">
+                              <Skeleton className="h-14 w-14 sm:h-16 sm:w-16" />
+                              <Flex direction="column" gap="2" style={{ minWidth: 0, flex: 1 }}>
+                                <Skeleton className="h-4 w-3/4" />
+                                <Skeleton className="h-3 w-40" />
+                              </Flex>
+                            </Flex>
+                          </Box>
+                        </Card>
+                      ))}
+                    </Flex>
+                  ) : similar.items.length ? (
+                    <Flex direction="column" gap="3">
+                      {similar.items.slice(0, 6).map((r) => (
+                        <RTLink key={r.id} asChild underline="none" highContrast>
+                          <Link to={`/listings/${r.id}`}>
+                            <Card className="transition-colors hover:bg-[var(--gray-a2)]">
+                              <Box p="4">
+                                <Flex justify="between" gap="3" align="start">
+                                  <Flex gap="3" align="start" style={{ minWidth: 0, flex: 1 }}>
+                                    <ListingThumbnail
+                                      src={r.thumbnail}
+                                      alt={r.title || ''}
+                                      className="h-14 w-14 sm:h-16 sm:w-16"
+                                      placeholder={t('detail_noImages')}
+                                      ariaLabel={r.thumbnail ? t('open_image_preview') : t('detail_noImages')}
+                                    />
+                                    <Flex direction="column" gap="1" style={{ minWidth: 0, flex: 1 }}>
+                                      <Text weight="bold" size="2" className="break-words whitespace-normal">
+                                        {r.title}
+                                      </Text>
+                                      <Text size="1" color="gray">
+                                        {Number(r.price) === 0 ? t('price_free') : formatMoney(r.price, r.currency)}
+                                      </Text>
+                                    </Flex>
+                                  </Flex>
+                                  <FavoriteButton listingId={r.id} />
+                                </Flex>
+                              </Box>
+                            </Card>
+                          </Link>
+                        </RTLink>
+                      ))}
+                    </Flex>
+                  ) : (
+                    <Text size="2" color="gray">
+                      {t('listings_none')}
+                    </Text>
+                  )}
+                </CardBody>
+              </Card>
 
               <Card>
                 <CardHeader>

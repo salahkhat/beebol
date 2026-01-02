@@ -491,7 +491,7 @@ export function ListingsPage() {
             </CardHeader>
             <CardBody>
               {newInCity.loading ? (
-                <Grid gap="3" columns={{ initial: '1', sm: '2', md: '3' }}>
+                <Grid gap="3" columns="1">
                   {Array.from({ length: 3 }).map((_, i) => (
                     <Card key={i}>
                       <Box p="4">
@@ -510,7 +510,7 @@ export function ListingsPage() {
                 <>
                   <InlineError error={newInCity.error instanceof ApiError ? newInCity.error : newInCity.error} />
                   {newInCity.items.length ? (
-                    <Grid gap="3" columns={{ initial: '1', sm: '2', md: '3' }}>
+                    <Grid gap="3" columns="1">
                       {newInCity.items.slice(0, 6).map((r) => (
                         <RTLink key={r.id} asChild underline="none" highContrast>
                           <Link to={`/listings/${r.id}`}>
@@ -567,7 +567,7 @@ export function ListingsPage() {
             </CardHeader>
             <CardBody>
               {trending.loading ? (
-                <Grid gap="3" columns={{ initial: '1', sm: '2', md: '3' }}>
+                <Grid gap="3" columns="1">
                   {Array.from({ length: 3 }).map((_, i) => (
                     <Card key={i}>
                       <Box p="4">
@@ -586,7 +586,7 @@ export function ListingsPage() {
                 <>
                   <InlineError error={trending.error instanceof ApiError ? trending.error : trending.error} />
                   {trending.items.length ? (
-                    <Grid gap="3" columns={{ initial: '1', sm: '2', md: '3' }}>
+                    <Grid gap="3" columns="1">
                       {trending.items.slice(0, 6).map((r) => (
                         <RTLink key={r.id} asChild underline="none" highContrast>
                           <Link to={`/listings/${r.id}`}>

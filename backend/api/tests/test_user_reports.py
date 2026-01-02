@@ -5,6 +5,7 @@ from rest_framework.test import APIClient
 from reports.models import ReportStatus, UserReport, UserReportEvent
 from messaging.models import PrivateThread
 from market.models import Category, City, Governorate, Listing
+from market.models import ListingStatus, ModerationStatus
 
 
 @pytest.mark.django_db
@@ -25,6 +26,23 @@ def test_create_user_report_forbids_self_report():
     res = client.post(
         "/api/v1/user-reports/",
         {"reported": reporter.id, "reason": "spam", "message": "bad"},
+        format="json",
+    )
+    assert res.status_code == 400
+    assert "reported" in res.data
+
+
+@pytest.mark.django_db
+def test_create_user_report_nonexistent_reported_returns_400():
+    User = get_user_model()
+    reporter = User.objects.create_user(username="rep2", password="pass")
+
+    client = APIClient()
+    client.force_authenticate(user=reporter)
+
+    res = client.post(
+        "/api/v1/user-reports/",
+        {"reported": 999999, "reason": "spam", "message": "bad"},
         format="json",
     )
     assert res.status_code == 400
@@ -80,11 +98,46 @@ def test_create_user_report_thread_context_requires_participant():
 
     res = client.post(
         "/api/v1/user-reports/",
-        {"reported": reported.id, "reason": "abuse", "thread": thread.id},
+        {"reported": reported.id, "reason": "spam", "thread": thread.id},
         format="json",
     )
     assert res.status_code == 400
     assert "thread" in res.data
+
+
+@pytest.mark.django_db
+def test_create_user_report_cannot_attach_non_public_listing_for_unrelated_user():
+    User = get_user_model()
+    reporter = User.objects.create_user(username="rep", password="pass")
+    seller = User.objects.create_user(username="seller", password="pass")
+    reported = User.objects.create_user(username="reported", password="pass")
+
+    cat = Category.objects.create(name_ar="Cat", name_en="Cat", slug="cat")
+    gov = Governorate.objects.create(name_ar="Gov", name_en="Gov", slug="gov")
+    city = City.objects.create(governorate=gov, name_ar="City", name_en="City", slug="city")
+
+    non_public_listing = Listing.objects.create(
+        seller=seller,
+        title="Draft",
+        description="",
+        category=cat,
+        governorate=gov,
+        city=city,
+        status=ListingStatus.DRAFT,
+        moderation_status=ModerationStatus.PENDING,
+        is_removed=False,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=reporter)
+
+    res = client.post(
+        "/api/v1/user-reports/",
+        {"reported": reported.id, "reason": "spam", "listing": non_public_listing.id},
+        format="json",
+    )
+    assert res.status_code == 400
+    assert "listing" in res.data
 
 
 @pytest.mark.django_db
@@ -95,7 +148,7 @@ def test_user_report_events_permissions():
     staff = User.objects.create_user(username="staff", password="pass", is_staff=True)
     reported = User.objects.create_user(username="reported", password="pass")
 
-    report = UserReport.objects.create(reporter=reporter, reported=reported, reason="abuse", status=ReportStatus.OPEN)
+    report = UserReport.objects.create(reporter=reporter, reported=reported, reason="spam", status=ReportStatus.OPEN)
     UserReportEvent.objects.create(report=report, actor=staff, from_status=ReportStatus.OPEN, to_status=ReportStatus.OPEN, note="init")
 
     client = APIClient()

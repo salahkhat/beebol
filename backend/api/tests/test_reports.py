@@ -3,7 +3,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from market.models import Category, City, Governorate, Listing
+from market.models import Category, City, Governorate, Listing, ListingStatus, ModerationStatus
 from reports.models import ListingReport, ListingReportEvent, ReportStatus
 
 User = get_user_model()
@@ -26,6 +26,19 @@ class ReportsApiTests(APITestCase):
             category=self.category,
             governorate=self.gov,
             city=self.city,
+            status=ListingStatus.PUBLISHED,
+            moderation_status=ModerationStatus.APPROVED,
+        )
+
+        self.non_public_listing = Listing.objects.create(
+            seller=self.seller,
+            title="Draft",
+            description="Desc",
+            category=self.category,
+            governorate=self.gov,
+            city=self.city,
+            status=ListingStatus.DRAFT,
+            moderation_status=ModerationStatus.PENDING,
         )
 
     def test_staff_can_update_status_and_note_and_reopen(self):
@@ -79,3 +92,25 @@ class ReportsApiTests(APITestCase):
         self.client.force_authenticate(other)
         r2 = self.client.get(events_url)
         self.assertIn(r2.status_code, (status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND))
+
+    def test_non_staff_cannot_report_non_public_listing(self):
+        self.client.force_authenticate(self.reporter)
+        url = reverse("report-list")
+        r = self.client.post(
+            url,
+            {"listing": self.non_public_listing.id, "reason": "spam", "message": "bad"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("listing", r.data)
+
+    def test_non_staff_reporting_nonexistent_listing_returns_400_without_enumeration(self):
+        self.client.force_authenticate(self.reporter)
+        url = reverse("report-list")
+        r = self.client.post(
+            url,
+            {"listing": 999999, "reason": "spam", "message": "bad"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("listing", r.data)

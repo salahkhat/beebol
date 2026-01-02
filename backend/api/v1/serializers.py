@@ -20,6 +20,8 @@ from market.models import (
     City,
     Governorate,
     Listing,
+    ListingStatus,
+    ModerationStatus,
     ListingAttributeValue,
     ListingImage,
     Neighborhood,
@@ -27,9 +29,31 @@ from market.models import (
     SavedSearch,
 )
 from messaging.models import PrivateMessage, PrivateThread, PublicQuestion, UserBlock
+from notifications.models import Notification, NotificationPreference
 from reports.models import ListingReport, ListingReportEvent, ReportStatus, UserReport, UserReportEvent
 
 User = get_user_model()
+
+
+class NonLeakyPrimaryKeyRelatedField(serializers.PrimaryKeyRelatedField):
+    def __init__(self, *args, not_found_message: str = "Not found.", **kwargs):
+        self.not_found_message = not_found_message
+        super().__init__(*args, **kwargs)
+
+    def to_internal_value(self, data):
+        try:
+            pk = int(data)
+        except Exception:
+            raise serializers.ValidationError(self.not_found_message)
+
+        if pk <= 0:
+            raise serializers.ValidationError(self.not_found_message)
+
+        qs = self.get_queryset()
+        obj = qs.filter(pk=pk).first() if qs is not None else None
+        if obj is None:
+            raise serializers.ValidationError(self.not_found_message)
+        return obj
 
 
 _ARABIC_INDIC_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
@@ -724,7 +748,39 @@ class PrivateThreadSerializer(serializers.ModelSerializer):
 
 
 class CreateThreadSerializer(serializers.Serializer):
-    listing_id = serializers.IntegerField()
+    listing_id = serializers.CharField()
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    is_read = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Notification
+        fields = [
+            "id",
+            "kind",
+            "title",
+            "body",
+            "payload",
+            "is_read",
+            "read_at",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_is_read(self, obj) -> bool:
+        return bool(getattr(obj, "read_at", None))
+
+
+class NotificationPreferenceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NotificationPreference
+        fields = [
+            "inapp_private_message",
+            "inapp_question_answered",
+            "email_private_message",
+            "email_question_answered",
+        ]
 
 
 class UserBlockSerializer(serializers.ModelSerializer):
@@ -737,12 +793,15 @@ class UserBlockSerializer(serializers.ModelSerializer):
 
 
 class UserBlockCreateSerializer(serializers.Serializer):
-    blocked_user_id = serializers.IntegerField()
+    blocked_user_id = NonLeakyPrimaryKeyRelatedField(
+        queryset=User.objects.all(),
+        not_found_message="User not found",
+    )
 
-    def validate_blocked_user_id(self, value: int) -> int:
+    def validate_blocked_user_id(self, value) -> int:
         request = self.context.get("request")
         if request and getattr(request, "user", None) is not None:
-            if request.user.is_authenticated and request.user.id == value:
+            if request.user.is_authenticated and request.user.id == getattr(value, "id", None):
                 raise serializers.ValidationError("Cannot block yourself")
         return value
 
@@ -814,6 +873,25 @@ class UserReportSerializer(serializers.ModelSerializer):
 
 
 class UserReportCreateSerializer(serializers.ModelSerializer):
+    reported = NonLeakyPrimaryKeyRelatedField(
+        queryset=User.objects.all(),
+        not_found_message="User not found.",
+    )
+
+    # Custom pk field to normalize errors without leaking existence.
+    listing = NonLeakyPrimaryKeyRelatedField(
+        queryset=Listing.objects.all(),
+        required=False,
+        allow_null=True,
+        not_found_message="Listing not found.",
+    )
+    thread = NonLeakyPrimaryKeyRelatedField(
+        queryset=PrivateThread.objects.select_related("listing").all(),
+        required=False,
+        allow_null=True,
+        not_found_message="Thread not found.",
+    )
+
     class Meta:
         model = UserReport
         fields = ["id", "reported", "listing", "thread", "reason", "message", "created_at"]
@@ -827,13 +905,29 @@ class UserReportCreateSerializer(serializers.ModelSerializer):
         if user and getattr(user, "is_authenticated", False) and reported and reported.id == user.id:
             raise serializers.ValidationError({"reported": "You cannot report yourself."})
 
+        is_staff = bool(user and getattr(user, "is_staff", False))
+
         thread = attrs.get("thread")
         if thread is not None and user and getattr(user, "is_authenticated", False):
-            # Only allow attaching a thread context if the reporter is a participant.
-            buyer_id = getattr(thread, "buyer_id", None)
-            seller_id = getattr(thread, "seller_id", None)
-            if user.id not in {buyer_id, seller_id}:
-                raise serializers.ValidationError({"thread": "Invalid thread."})
+            if not is_staff and user.id not in {thread.buyer_id, thread.seller_id}:
+                raise serializers.ValidationError({"thread": "Thread not found."})
+
+        listing = attrs.get("listing")
+        if listing is not None and user and getattr(user, "is_authenticated", False):
+            if not is_staff:
+                is_public = (
+                    not listing.is_removed
+                    and listing.status == ListingStatus.PUBLISHED
+                    and listing.moderation_status == ModerationStatus.APPROVED
+                )
+                if not is_public and listing.seller_id != user.id:
+                    # Avoid confirming existence of non-public listings.
+                    raise serializers.ValidationError({"listing": "Listing not found."})
+
+        # If both provided, ensure the thread context matches the listing context.
+        if thread is not None and listing is not None:
+            if getattr(thread, "listing_id", None) != getattr(listing, "id", None):
+                raise serializers.ValidationError({"thread": "Thread not found."})
 
         return attrs
 
@@ -853,10 +947,33 @@ class UserReportEventSerializer(serializers.ModelSerializer):
 
 
 class ListingReportCreateSerializer(serializers.ModelSerializer):
+    listing = NonLeakyPrimaryKeyRelatedField(
+        queryset=Listing.objects.all(),
+        not_found_message="Listing not found.",
+    )
+
     class Meta:
         model = ListingReport
         fields = ["id", "listing", "reason", "message", "created_at"]
         read_only_fields = ["id", "created_at"]
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+
+        listing = attrs.get("listing")
+        if listing is not None and user and getattr(user, "is_authenticated", False):
+            if not getattr(user, "is_staff", False):
+                is_public = (
+                    not listing.is_removed
+                    and listing.status == ListingStatus.PUBLISHED
+                    and listing.moderation_status == ModerationStatus.APPROVED
+                )
+                if not is_public:
+                    # Avoid confirming existence of non-public listings.
+                    raise serializers.ValidationError({"listing": "Listing not found."})
+
+        return attrs
 
 
 class ListingReportStaffUpdateSerializer(serializers.Serializer):
@@ -891,7 +1008,10 @@ class ListingFavoriteSerializer(serializers.ModelSerializer):
 
 
 class ListingFavoriteCreateSerializer(serializers.Serializer):
-    listing_id = serializers.IntegerField()
+    listing_id = NonLeakyPrimaryKeyRelatedField(
+        queryset=Listing.objects.all(),
+        not_found_message="Listing not found",
+    )
 
 
 class SavedSearchSerializer(serializers.ModelSerializer):

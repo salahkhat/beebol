@@ -29,6 +29,7 @@ const AdminDashboardPage = lazy(() => import('./pages/AdminDashboard').then((m) 
 const AdminModerationPage = lazy(() => import('./pages/AdminModeration').then((m) => ({ default: m.AdminModerationPage })));
 const ThreadsPage = lazy(() => import('./pages/Threads').then((m) => ({ default: m.ThreadsPage })));
 const ThreadDetailPage = lazy(() => import('./pages/ThreadDetail').then((m) => ({ default: m.ThreadDetailPage })));
+const NotificationsPage = lazy(() => import('./pages/Notifications').then((m) => ({ default: m.NotificationsPage })));
 
 function RouteLoading() {
   const { t } = useI18n();
@@ -182,6 +183,14 @@ export function App() {
             element={
               <RequireAuth>
                 {withSuspense(<ThreadDetailPage />)}
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/notifications"
+            element={
+              <RequireAuth>
+                {withSuspense(<NotificationsPage />)}
               </RequireAuth>
             }
           />

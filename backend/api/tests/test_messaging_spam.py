@@ -28,6 +28,17 @@ class MessagingSpamApiTests(APITestCase):
             moderation_status=ModerationStatus.APPROVED,
         )
 
+        self.non_public_listing = Listing.objects.create(
+            seller=self.seller,
+            title="Draft",
+            description="Desc",
+            category=self.category,
+            governorate=self.gov,
+            city=self.city,
+            status=ListingStatus.DRAFT,
+            moderation_status=ModerationStatus.PENDING,
+        )
+
     def _create_thread(self):
         self.client.force_authenticate(self.buyer)
         url = reverse("thread-list")
@@ -41,6 +52,24 @@ class MessagingSpamApiTests(APITestCase):
         r = self.client.post(url, {"body": "hello"}, format="json")
         self.assertEqual(r.status_code, status.HTTP_201_CREATED)
         self.assertEqual(r.data.get("body"), "hello")
+
+    def test_cannot_create_thread_for_non_public_listing(self):
+        self.client.force_authenticate(self.buyer)
+        url = reverse("thread-list")
+        r = self.client.post(url, {"listing_id": self.non_public_listing.id}, format="json")
+        self.assertEqual(r.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_create_thread_nonexistent_listing_returns_404(self):
+        self.client.force_authenticate(self.buyer)
+        url = reverse("thread-list")
+        r = self.client.post(url, {"listing_id": 999999}, format="json")
+        self.assertEqual(r.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_create_thread_invalid_listing_id_returns_404(self):
+        self.client.force_authenticate(self.buyer)
+        url = reverse("thread-list")
+        r = self.client.post(url, {"listing_id": "not-an-int"}, format="json")
+        self.assertEqual(r.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_send_message_rejects_contact_info(self):
         thread_id = self._create_thread()
