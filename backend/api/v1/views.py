@@ -43,7 +43,7 @@ from market.models import (
     Profile,
     ListingWatch,
 )
-from messaging.models import PrivateMessage, PrivateThread, PublicQuestion, UserBlock
+from messaging.models import Offer, OfferStatus, PrivateMessage, PrivateThread, PublicQuestion, ThreadBuyerChecklist, UserBlock
 from notifications.models import Notification, NotificationKind, NotificationPreference
 from reports.models import ListingReport, ListingReportEvent, ReportStatus, UserReport, UserReportEvent
 
@@ -86,6 +86,11 @@ from .serializers import (
     NotificationPreferenceSerializer,
     ListingWatchSerializer,
     ListingWatchCreateSerializer,
+    OfferSerializer,
+    OfferCreateSerializer,
+    OfferActionSerializer,
+    ThreadBuyerChecklistSerializer,
+    ThreadBuyerChecklistUpdateSerializer,
 )
 
 User = get_user_model()
@@ -2046,6 +2051,7 @@ class PrivateThreadViewSet(viewsets.ModelViewSet):
 
         return (
             PrivateThread.objects.select_related("listing", "buyer", "seller")
+            .select_related("buyer_checklist")
             .filter(Q(buyer=user) | Q(seller=user))
             .annotate(
                 last_message_body=Subquery(last_msg.values("body")[:1]),
@@ -2056,6 +2062,33 @@ class PrivateThreadViewSet(viewsets.ModelViewSet):
             )
             .order_by("-last_message_at", "-created_at")
         )
+
+    @action(detail=True, methods=["get", "patch"], url_path="buyer-checklist")
+    def buyer_checklist(self, request, pk=None):
+        thread = self.get_object()
+        user = request.user
+
+        if not getattr(user, "is_staff", False) and user.id != thread.buyer_id:
+            return Response({"detail": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
+
+        checklist, _created = ThreadBuyerChecklist.objects.get_or_create(
+            thread=thread,
+            defaults={"buyer": thread.buyer},
+        )
+
+        if request.method == "GET":
+            return Response(ThreadBuyerChecklistSerializer(checklist).data)
+
+        serializer = ThreadBuyerChecklistUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        patch = serializer.validated_data
+        if not patch:
+            return Response(ThreadBuyerChecklistSerializer(checklist).data)
+
+        for key, value in patch.items():
+            setattr(checklist, key, value)
+        checklist.save(update_fields=[*patch.keys(), "updated_at"])
+        return Response(ThreadBuyerChecklistSerializer(checklist).data)
 
     def create(self, request, *args, **kwargs):
         serializer = CreateThreadSerializer(data=request.data)
@@ -2100,7 +2133,7 @@ class PrivateThreadViewSet(viewsets.ModelViewSet):
     def messages(self, request, pk=None):
         thread = self.get_object()
         if request.method == "GET":
-            msgs = thread.messages.select_related("sender").all()
+            msgs = thread.messages.select_related("sender", "offer").all()
 
             if not getattr(request.user, "is_staff", False):
                 msgs = msgs.filter(Q(is_shadowed=False) | Q(sender=request.user))
@@ -2157,6 +2190,233 @@ class PrivateThreadViewSet(viewsets.ModelViewSet):
             PrivateThread.objects.filter(id=thread.id).update(seller_last_read_at=now)
 
         return Response(PrivateMessageSerializer(msg).data, status=status.HTTP_201_CREATED)
+
+
+class OfferViewSet(viewsets.GenericViewSet):
+    permission_classes = [IsAuthenticated]
+    serializer_class = OfferSerializer
+    throttle_scope_map = {"POST": "messaging"}
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = Offer.objects.select_related("thread", "listing", "buyer", "seller", "created_by")
+        if getattr(user, "is_staff", False):
+            return qs
+        return qs.filter(Q(buyer=user) | Q(seller=user))
+
+    def _recipient_for_offer(self, offer: Offer):
+        return offer.seller if offer.created_by_id == offer.buyer_id else offer.buyer
+
+    def _other_party(self, offer: Offer, user):
+        return offer.seller if user.id == offer.buyer_id else offer.buyer
+
+    def _ensure_not_blocked(self, a, b) -> bool:
+        if UserBlock.objects.filter(blocker=a, blocked=b).exists() or UserBlock.objects.filter(blocker=b, blocked=a).exists():
+            return False
+        return True
+
+    def _notify_new_message(self, *, thread: PrivateThread, recipient: User, sender: User, msg: PrivateMessage):
+        if msg.is_shadowed:
+            return
+        try:
+            prefs = _get_or_create_notification_preferences(recipient)
+            if prefs.inapp_private_message:
+                Notification.objects.create(
+                    user=recipient,
+                    kind=NotificationKind.PRIVATE_MESSAGE,
+                    title="New message",
+                    body="You have a new message.",
+                    payload={
+                        "thread_id": thread.id,
+                        "listing_id": thread.listing_id,
+                        "sender_id": sender.id,
+                    },
+                )
+            if prefs.email_private_message:
+                _send_notification_email(
+                    to_user=recipient,
+                    subject="New private message",
+                    message="You have a new private message on Beebol. Open the app to read it.",
+                )
+        except Exception:
+            pass
+
+    def _mark_read(self, *, thread: PrivateThread, user: User, when):
+        if user.id == thread.buyer_id:
+            PrivateThread.objects.filter(id=thread.id).update(buyer_last_read_at=when)
+        elif user.id == thread.seller_id:
+            PrivateThread.objects.filter(id=thread.id).update(seller_last_read_at=when)
+
+    def create(self, request, *args, **kwargs):
+        serializer = OfferCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        listing_id = serializer.validated_data["listing_id"]
+        try:
+            listing = Listing.objects.select_related("seller").get(
+                id=listing_id,
+                is_removed=False,
+                status=ListingStatus.PUBLISHED,
+                moderation_status=ModerationStatus.APPROVED,
+            )
+        except Listing.DoesNotExist:
+            return Response({"detail": "Listing not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        if listing.seller_id == request.user.id:
+            return Response({"detail": "Cannot make an offer on your own listing"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not self._ensure_not_blocked(request.user, listing.seller):
+            return Response({"detail": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
+
+        thread, _created = PrivateThread.objects.get_or_create(
+            listing=listing,
+            buyer=request.user,
+            defaults={"seller": listing.seller},
+        )
+
+        amount = Decimal(str(serializer.validated_data["amount"]))
+        currency = serializer.validated_data.get("currency") or listing.currency
+        currency = str(currency or "").strip().upper() or listing.currency
+
+        offer = Offer.objects.create(
+            thread=thread,
+            listing=listing,
+            buyer=request.user,
+            seller=listing.seller,
+            created_by=request.user,
+            amount=amount,
+            currency=currency,
+            status=OfferStatus.PENDING,
+        )
+
+        msg = PrivateMessage.objects.create(
+            thread=thread,
+            sender=request.user,
+            body=f"Offer: {offer.amount} {offer.currency}",
+            offer=offer,
+            is_shadowed=is_shadow_banned_user(request.user),
+        )
+
+        self._notify_new_message(thread=thread, recipient=listing.seller, sender=request.user, msg=msg)
+        now = timezone.now()
+        self._mark_read(thread=thread, user=request.user, when=now)
+
+        return Response(OfferSerializer(offer).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="accept")
+    def accept(self, request, pk=None):
+        offer = self.get_object()
+        if offer.status != OfferStatus.PENDING:
+            return Response({"detail": "Offer is not pending"}, status=status.HTTP_400_BAD_REQUEST)
+
+        recipient = self._recipient_for_offer(offer)
+        if recipient.id != request.user.id:
+            return Response({"detail": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
+
+        other = self._other_party(offer, request.user)
+        if not self._ensure_not_blocked(request.user, other):
+            return Response({"detail": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
+
+        now = timezone.now()
+        Offer.objects.filter(id=offer.id).update(status=OfferStatus.ACCEPTED, decided_at=now)
+        offer.status = OfferStatus.ACCEPTED
+        offer.decided_at = now
+
+        msg = PrivateMessage.objects.create(
+            thread=offer.thread,
+            sender=request.user,
+            body="Offer accepted",
+            offer=offer,
+            is_shadowed=False,
+        )
+
+        self._notify_new_message(thread=offer.thread, recipient=other, sender=request.user, msg=msg)
+        self._mark_read(thread=offer.thread, user=request.user, when=now)
+
+        return Response(OfferSerializer(offer).data)
+
+    @action(detail=True, methods=["post"], url_path="reject")
+    def reject(self, request, pk=None):
+        offer = self.get_object()
+        if offer.status != OfferStatus.PENDING:
+            return Response({"detail": "Offer is not pending"}, status=status.HTTP_400_BAD_REQUEST)
+
+        recipient = self._recipient_for_offer(offer)
+        if recipient.id != request.user.id:
+            return Response({"detail": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
+
+        other = self._other_party(offer, request.user)
+        if not self._ensure_not_blocked(request.user, other):
+            return Response({"detail": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
+
+        now = timezone.now()
+        Offer.objects.filter(id=offer.id).update(status=OfferStatus.REJECTED, decided_at=now)
+        offer.status = OfferStatus.REJECTED
+        offer.decided_at = now
+
+        msg = PrivateMessage.objects.create(
+            thread=offer.thread,
+            sender=request.user,
+            body="Offer rejected",
+            offer=offer,
+            is_shadowed=False,
+        )
+
+        self._notify_new_message(thread=offer.thread, recipient=other, sender=request.user, msg=msg)
+        self._mark_read(thread=offer.thread, user=request.user, when=now)
+
+        return Response(OfferSerializer(offer).data)
+
+    @action(detail=True, methods=["post"], url_path="counter")
+    def counter(self, request, pk=None):
+        offer = self.get_object()
+        if offer.status != OfferStatus.PENDING:
+            return Response({"detail": "Offer is not pending"}, status=status.HTTP_400_BAD_REQUEST)
+
+        recipient = self._recipient_for_offer(offer)
+        if recipient.id != request.user.id:
+            return Response({"detail": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
+
+        other = self._other_party(offer, request.user)
+        if not self._ensure_not_blocked(request.user, other):
+            return Response({"detail": "Not allowed"}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = OfferActionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        if "amount" not in serializer.validated_data:
+            return Response({"detail": "Amount is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        now = timezone.now()
+        Offer.objects.filter(id=offer.id).update(status=OfferStatus.COUNTERED, decided_at=now)
+
+        amount = Decimal(str(serializer.validated_data["amount"]))
+        currency = serializer.validated_data.get("currency") or offer.currency
+        currency = str(currency or "").strip().upper() or offer.currency
+
+        new_offer = Offer.objects.create(
+            thread=offer.thread,
+            listing=offer.listing,
+            buyer=offer.buyer,
+            seller=offer.seller,
+            created_by=request.user,
+            amount=amount,
+            currency=currency,
+            status=OfferStatus.PENDING,
+            counter_of=offer,
+        )
+
+        msg = PrivateMessage.objects.create(
+            thread=offer.thread,
+            sender=request.user,
+            body=f"Counter offer: {new_offer.amount} {new_offer.currency}",
+            offer=new_offer,
+            is_shadowed=False,
+        )
+
+        self._notify_new_message(thread=offer.thread, recipient=other, sender=request.user, msg=msg)
+        self._mark_read(thread=offer.thread, user=request.user, when=now)
+
+        return Response(OfferSerializer(new_offer).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"], url_path="report")
     def report(self, request, pk=None):

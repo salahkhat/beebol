@@ -30,7 +30,7 @@ from market.models import (
     SavedSearch,
     ListingWatch,
 )
-from messaging.models import PrivateMessage, PrivateThread, PublicQuestion, UserBlock
+from messaging.models import Offer, OfferStatus, PrivateMessage, PrivateThread, PublicQuestion, ThreadBuyerChecklist, UserBlock
 from notifications.models import Notification, NotificationPreference
 from reports.models import ListingReport, ListingReportEvent, ReportStatus, UserReport, UserReportEvent
 
@@ -886,11 +886,83 @@ class PrivateMessageCreateSerializer(serializers.Serializer):
 
 class PrivateMessageSerializer(serializers.ModelSerializer):
     sender_username = serializers.CharField(source="sender.username", read_only=True)
+    offer = serializers.SerializerMethodField()
+
+    def get_offer(self, obj):
+        offer = getattr(obj, "offer", None)
+        if offer is None:
+            return None
+        return OfferSerializer(offer).data
 
     class Meta:
         model = PrivateMessage
-        fields = ["id", "thread", "sender", "sender_username", "body", "created_at"]
+        fields = ["id", "thread", "sender", "sender_username", "body", "offer", "created_at"]
         read_only_fields = ["id", "sender", "created_at"]
+
+
+class OfferSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Offer
+        fields = [
+            "id",
+            "thread",
+            "listing",
+            "buyer",
+            "seller",
+            "created_by",
+            "amount",
+            "currency",
+            "status",
+            "counter_of",
+            "decided_at",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+
+class OfferCreateSerializer(serializers.Serializer):
+    listing_id = serializers.IntegerField(min_value=1)
+    amount = serializers.CharField()
+    currency = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_amount(self, value: str) -> str:
+        try:
+            d = Decimal(str(value).strip())
+        except Exception:
+            raise serializers.ValidationError("Invalid amount")
+        if d <= Decimal("0"):
+            raise serializers.ValidationError("Amount must be greater than 0")
+        return str(d)
+
+    def validate_currency(self, value: str) -> str:
+        v = str(value or "").strip().upper()
+        if not v:
+            return ""
+        if len(v) > 8:
+            raise serializers.ValidationError("Invalid currency")
+        return v
+
+
+class OfferActionSerializer(serializers.Serializer):
+    amount = serializers.CharField(required=False)
+    currency = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_amount(self, value: str) -> str:
+        try:
+            d = Decimal(str(value).strip())
+        except Exception:
+            raise serializers.ValidationError("Invalid amount")
+        if d <= Decimal("0"):
+            raise serializers.ValidationError("Amount must be greater than 0")
+        return str(d)
+
+    def validate_currency(self, value: str) -> str:
+        v = str(value or "").strip().upper()
+        if not v:
+            return ""
+        if len(v) > 8:
+            raise serializers.ValidationError("Invalid currency")
+        return v
 
 
 class PrivateThreadSerializer(serializers.ModelSerializer):
@@ -900,6 +972,19 @@ class PrivateThreadSerializer(serializers.ModelSerializer):
     last_message_sender_username = serializers.CharField(read_only=True)
     unread_count = serializers.IntegerField(read_only=True)
     my_last_read_at = serializers.DateTimeField(read_only=True)
+    buyer_checklist = serializers.SerializerMethodField()
+
+    def get_buyer_checklist(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None) if request else None
+        if not user or not getattr(user, "is_authenticated", False):
+            return None
+        if getattr(user, "is_staff", False) or user.id == getattr(obj, "buyer_id", None):
+            checklist = getattr(obj, "buyer_checklist", None)
+            if checklist is None:
+                return None
+            return ThreadBuyerChecklistSerializer(checklist).data
+        return None
 
     class Meta:
         model = PrivateThread
@@ -915,8 +1000,28 @@ class PrivateThreadSerializer(serializers.ModelSerializer):
             "last_message_sender_username",
             "unread_count",
             "my_last_read_at",
+            "buyer_checklist",
         ]
         read_only_fields = ["id", "buyer", "seller", "created_at"]
+
+
+class ThreadBuyerChecklistSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ThreadBuyerChecklist
+        fields = [
+            "id",
+            "thread",
+            "buyer",
+            "confirmed_condition",
+            "confirmed_location",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class ThreadBuyerChecklistUpdateSerializer(serializers.Serializer):
+    confirmed_condition = serializers.BooleanField(required=False)
+    confirmed_location = serializers.BooleanField(required=False)
 
 
 class CreateThreadSerializer(serializers.Serializer):

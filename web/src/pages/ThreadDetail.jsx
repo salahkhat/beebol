@@ -53,6 +53,11 @@ export function ThreadDetailPage() {
   const [busy, setBusy] = useState(false);
   const [reloadNonce, setReloadNonce] = useState(0);
 
+  const [checklistBusy, setChecklistBusy] = useState(false);
+
+  const [offerBusyId, setOfferBusyId] = useState(null);
+  const [counterDraft, setCounterDraft] = useState({ offerId: null, amount: '' });
+
   const [blocks, setBlocks] = useState([]);
   const [blocking, setBlocking] = useState(false);
 
@@ -63,6 +68,7 @@ export function ThreadDetailPage() {
 
   const myId = user?.id;
   const otherUserId = thread && myId ? (Number(thread.buyer) === Number(myId) ? thread.seller : thread.buyer) : null;
+  const isBuyer = thread && myId ? Number(thread.buyer) === Number(myId) : false;
   const otherBlocked = otherUserId ? blocks.find((b) => Number(b.blocked) === Number(otherUserId)) : null;
 
   const endRef = useRef(null);
@@ -96,6 +102,25 @@ export function ThreadDetailPage() {
     } finally {
       if (soft) setRefreshing(false);
       else setLoading(false);
+    }
+  }
+
+  async function toggleChecklist(key) {
+    if (!isBuyer) return;
+    if (!thread?.id) return;
+    const current = thread?.buyer_checklist?.[key];
+    setChecklistBusy(true);
+    try {
+      const updated = await api.updateThreadBuyerChecklist(thread.id, { [key]: !current });
+      setThread((prev) => (prev ? { ...prev, buyer_checklist: updated } : prev));
+    } catch (e) {
+      toast.push({
+        title: t('buyer_checklist_title'),
+        description: e instanceof ApiError ? e.message : String(e),
+        variant: 'error',
+      });
+    } finally {
+      setChecklistBusy(false);
     }
   }
 
@@ -201,6 +226,58 @@ export function ThreadDetailPage() {
       toast.push({ title: t('toast_sendFailed'), description: e2 instanceof ApiError ? e2.message : String(e2), variant: 'error' });
     } finally {
       setBusy(false);
+    }
+  }
+
+  function offerStatusLabel(status) {
+    if (!status) return '';
+    const key = `offer_status_${status}`;
+    const translated = t(key);
+    return translated === key ? String(status) : translated;
+  }
+
+  async function acceptOffer(offerId) {
+    if (!offerId) return;
+    setOfferBusyId(offerId);
+    try {
+      await api.acceptOffer(offerId);
+      toast.push({ title: t('offer_title'), description: t('offer_accepted') });
+      await refresh({ soft: true });
+    } catch (e) {
+      toast.push({ title: t('offer_title'), description: e instanceof ApiError ? e.message : String(e), variant: 'error' });
+    } finally {
+      setOfferBusyId(null);
+    }
+  }
+
+  async function rejectOffer(offerId) {
+    if (!offerId) return;
+    setOfferBusyId(offerId);
+    try {
+      await api.rejectOffer(offerId);
+      toast.push({ title: t('offer_title'), description: t('offer_rejected') });
+      await refresh({ soft: true });
+    } catch (e) {
+      toast.push({ title: t('offer_title'), description: e instanceof ApiError ? e.message : String(e), variant: 'error' });
+    } finally {
+      setOfferBusyId(null);
+    }
+  }
+
+  async function submitCounter() {
+    const offerId = counterDraft?.offerId;
+    const amount = String(counterDraft?.amount || '').trim();
+    if (!offerId || !amount) return;
+    setOfferBusyId(offerId);
+    try {
+      await api.counterOffer(offerId, { amount });
+      toast.push({ title: t('offer_title'), description: t('offer_countered') });
+      setCounterDraft({ offerId: null, amount: '' });
+      await refresh({ soft: true });
+    } catch (e) {
+      toast.push({ title: t('offer_title'), description: e instanceof ApiError ? e.message : String(e), variant: 'error' });
+    } finally {
+      setOfferBusyId(null);
     }
   }
 
@@ -310,6 +387,43 @@ export function ThreadDetailPage() {
             </Card>
           ) : null}
 
+          {isBuyer ? (
+            <Card>
+              <Box p="4">
+                <Flex direction="column" gap="3">
+                  <Heading size="3">{t('buyer_checklist_title')}</Heading>
+                  <Text size="2" color="gray">
+                    {t('buyer_checklist_help')}
+                  </Text>
+
+                  <Flex align="center" justify="between" gap="3" wrap="wrap">
+                    <Text size="2">{t('buyer_checklist_condition')}</Text>
+                    <Button
+                      size="sm"
+                      variant={thread?.buyer_checklist?.confirmed_condition ? 'secondary' : 'primary'}
+                      onClick={() => toggleChecklist('confirmed_condition')}
+                      disabled={checklistBusy}
+                    >
+                      {thread?.buyer_checklist?.confirmed_condition ? t('buyer_checklist_done') : t('buyer_checklist_mark_done')}
+                    </Button>
+                  </Flex>
+
+                  <Flex align="center" justify="between" gap="3" wrap="wrap">
+                    <Text size="2">{t('buyer_checklist_location')}</Text>
+                    <Button
+                      size="sm"
+                      variant={thread?.buyer_checklist?.confirmed_location ? 'secondary' : 'primary'}
+                      onClick={() => toggleChecklist('confirmed_location')}
+                      disabled={checklistBusy}
+                    >
+                      {thread?.buyer_checklist?.confirmed_location ? t('buyer_checklist_done') : t('buyer_checklist_mark_done')}
+                    </Button>
+                  </Flex>
+                </Flex>
+              </Box>
+            </Card>
+          ) : null}
+
           {loading && messages.length === 0 ? (
             <Flex direction="column" gap="3" mt="4" className="bb-stagger">
               {Array.from({ length: 5 }).map((_, i) => (
@@ -339,9 +453,89 @@ export function ThreadDetailPage() {
                       {formatDate(m.created_at)}
                     </Text>
                   </Flex>
-                  <Text size="2" mt="2" style={{ whiteSpace: 'pre-wrap' }}>
-                    {m.body}
-                  </Text>
+
+                  {m.offer ? (
+                    <Box mt="2">
+                      <Card>
+                        <Box p="3">
+                          <Flex align="center" justify="between" gap="2" wrap="wrap">
+                            <Text size="2" weight="bold">
+                              {t('offer_label', { amount: m.offer.amount, currency: m.offer.currency })}
+                            </Text>
+                            <Text size="2" color="gray">
+                              {offerStatusLabel(m.offer.status)}
+                            </Text>
+                          </Flex>
+
+                          {String(m.body || '').trim() ? (
+                            <Text size="2" mt="2" style={{ whiteSpace: 'pre-wrap' }}>
+                              {m.body}
+                            </Text>
+                          ) : null}
+
+                          {m.offer.status === 'pending' && myId && Number(m.offer.created_by) !== Number(myId) ? (
+                            <Flex mt="3" align="center" gap="2" wrap="wrap">
+                              <Button
+                                size="sm"
+                                onClick={() => acceptOffer(m.offer.id)}
+                                disabled={offerBusyId === m.offer.id}
+                              >
+                                {t('offer_accept')}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => rejectOffer(m.offer.id)}
+                                disabled={offerBusyId === m.offer.id}
+                              >
+                                {t('offer_reject')}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => setCounterDraft({ offerId: m.offer.id, amount: '' })}
+                                disabled={offerBusyId === m.offer.id}
+                              >
+                                {t('offer_counter')}
+                              </Button>
+                            </Flex>
+                          ) : null}
+
+                          {counterDraft?.offerId === m.offer.id ? (
+                            <Flex mt="3" align="end" gap="2" wrap="wrap">
+                              <Box style={{ minWidth: 220 }}>
+                                <Text size="2">{t('offer_amount')}</Text>
+                                <Input
+                                  value={counterDraft.amount}
+                                  onChange={(e) => setCounterDraft((prev) => ({ ...prev, amount: e.target.value }))}
+                                  placeholder="0"
+                                />
+                              </Box>
+                              <Button
+                                size="sm"
+                                onClick={submitCounter}
+                                disabled={offerBusyId === m.offer.id || !String(counterDraft.amount || '').trim()}
+                              >
+                                {t('offer_send_counter')}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => setCounterDraft({ offerId: null, amount: '' })}
+                                disabled={offerBusyId === m.offer.id}
+                              >
+                                {t('cancel')}
+                              </Button>
+                            </Flex>
+                          ) : null}
+                        </Box>
+                      </Card>
+                    </Box>
+                  ) : (
+                    <Text size="2" mt="2" style={{ whiteSpace: 'pre-wrap' }}>
+                      {m.body}
+                    </Text>
+                  )}
                 </Box>
               </Card>
             ))}

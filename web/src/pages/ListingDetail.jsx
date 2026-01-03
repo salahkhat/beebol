@@ -102,6 +102,10 @@ export function ListingDetailPage() {
 
   const [similar, setSimilar] = useState({ loading: false, error: null, items: [] });
 
+  const [offerOpen, setOfferOpen] = useState(false);
+  const [offerAmount, setOfferAmount] = useState('');
+  const [offerSubmitting, setOfferSubmitting] = useState(false);
+
   const isOwner = !!user && !!data && data.seller_id === user.id;
 
   const priceOnInquiry = useMemo(() => {
@@ -396,6 +400,29 @@ export function ListingDetailPage() {
       nav(`/threads/${thread.id}`);
     } catch (e) {
       toast.push({ title: t('toast_couldNotMessageSeller'), description: e instanceof ApiError ? e.message : String(e), variant: 'error' });
+    }
+  }
+
+  async function submitOffer() {
+    if (!data?.id) return;
+    const amount = String(offerAmount || '').trim();
+    if (!amount) return;
+    setOfferSubmitting(true);
+    try {
+      const created = await api.createOffer({ listing_id: Number(data.id), amount, currency: data.currency });
+      toast.push({ title: t('offer_title'), description: t('offer_sent') });
+      setOfferOpen(false);
+      setOfferAmount('');
+      const threadId = created?.thread;
+      if (threadId) nav(`/threads/${threadId}`);
+    } catch (e) {
+      toast.push({
+        title: t('offer_title'),
+        description: e instanceof ApiError ? e.message : String(e),
+        variant: 'error',
+      });
+    } finally {
+      setOfferSubmitting(false);
     }
   }
 
@@ -752,6 +779,37 @@ export function ListingDetailPage() {
                 ) : null}
               </Dialog>
 
+              <Dialog
+                open={offerOpen}
+                onOpenChange={(v) => {
+                  if (!v && offerSubmitting) return;
+                  setOfferOpen(v);
+                }}
+                title={t('offer_title')}
+                maxWidth="520px"
+              >
+                <Flex direction="column" gap="3">
+                  <Text size="2" color="gray">
+                    {t('offer_help')}
+                  </Text>
+                  <Flex direction="column" gap="2">
+                    <Text size="2">{t('offer_amount')}</Text>
+                    <Input value={offerAmount} onChange={(e) => setOfferAmount(e.target.value)} placeholder="0" />
+                    <Text size="1" color="gray">
+                      {t('offer_currency', { code: data?.currency || '' })}
+                    </Text>
+                  </Flex>
+                  <Flex align="center" gap="2" wrap="wrap">
+                    <Button onClick={submitOffer} disabled={offerSubmitting || !String(offerAmount || '').trim()}>
+                      {offerSubmitting ? t('submitting') : t('offer_send')}
+                    </Button>
+                    <Button variant="secondary" onClick={() => setOfferOpen(false)} disabled={offerSubmitting}>
+                      {t('cancel')}
+                    </Button>
+                  </Flex>
+                </Flex>
+              </Dialog>
+
               <Grid columns={{ initial: '1', md: '2' }} gap="4" align="start">
                 <Flex direction="column" gap="3" style={{ minWidth: 0 }}>
                   <Text size="2">
@@ -839,14 +897,21 @@ export function ListingDetailPage() {
 
                   <Flex gap="2" wrap="wrap">
                     {isAuthenticated && !isOwner ? (
-                      <Button onClick={messageSeller}>
-                        <Flex align="center" gap="2">
-                          <Icon icon={MessageSquareText} size={16} />
+                      <>
+                        <Button onClick={messageSeller}>
+                          <Flex align="center" gap="2">
+                            <Icon icon={MessageSquareText} size={16} />
+                            <Text as="span" size="2">
+                              {t('detail_messageSeller')}
+                            </Text>
+                          </Flex>
+                        </Button>
+                        <Button variant="secondary" onClick={() => setOfferOpen(true)}>
                           <Text as="span" size="2">
-                            {t('detail_messageSeller')}
+                            {t('offer_make')}
                           </Text>
-                        </Flex>
-                      </Button>
+                        </Button>
+                      </>
                     ) : (
                       !isAuthenticated ? (
                         <RTLink asChild underline="none">

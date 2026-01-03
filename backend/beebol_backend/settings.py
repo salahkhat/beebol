@@ -190,6 +190,24 @@ REST_FRAMEWORK = {
 }
 
 
+# Background jobs (Phase 6)
+# Celery is optional and can be enabled in deployments that provide a broker (e.g., Redis).
+CELERY_ENABLED = env.bool("CELERY_ENABLED", default=False)
+
+# Prefer explicit broker configuration in production; default to local Redis for dev convenience.
+CELERY_BROKER_URL = env(
+    "CELERY_BROKER_URL",
+    default=("redis://127.0.0.1:6379/0" if DEBUG else ""),
+)
+
+# Keep results off by default to avoid extra storage requirements.
+CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="")
+
+# Tests should not require a running broker.
+CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER", default=("pytest" in sys.modules))
+CELERY_TASK_EAGER_PROPAGATES = True
+
+
 # Anti-spam (Trust & Safety v1)
 # These are additional guards on top of DRF throttling.
 SPAM_MESSAGE_COOLDOWN_SECONDS = env.int("SPAM_MESSAGE_COOLDOWN_SECONDS", default=2)

@@ -30,6 +30,27 @@ The blueprint provisions these automatically:
 
 If you rename services, update the two URL values in [render.yaml](../render.yaml).
 
+## Postgres notes (Phase 6 readiness)
+
+- Render provisions Postgres and injects `DATABASE_URL` via the blueprint.
+- Locally, SQLite is fine for dev, but you can run against Postgres to catch schema/index differences:
+	- Set `DATABASE_URL` to a Postgres URL (`postgresql://...`).
+	- Install prod deps (`pip install -r requirements-prod.txt`) so `psycopg` is available.
+	- Run `python manage.py migrate` and then run a focused test (e.g., `pytest backend/api/tests -q`).
+
+## Celery/Redis (optional)
+
+This repo includes a minimal Celery scaffold for Phase 6 background jobs.
+
+- By default, the app runs without Celery.
+- To enable Celery in an environment that provides Redis:
+	- Set `CELERY_ENABLED=True`
+	- Set `CELERY_BROKER_URL` to your Redis URL (example: `redis://:<password>@<host>:6379/0`)
+	- (Optional) set `CELERY_RESULT_BACKEND` if you want task result persistence.
+
+Run a worker locally (PowerShell, from `backend/`):
+- `celery -A beebol_backend worker -l info`
+
 ## Local production-ish test
 
 Backend (PowerShell):

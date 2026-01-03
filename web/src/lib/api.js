@@ -252,6 +252,15 @@ export const api = {
   threadMessages: (id) => apiFetchJson(`api/v1/threads/${id}/messages/`),
   sendThreadMessage: (id, body) => apiFetchJson(`api/v1/threads/${id}/messages/`, { method: 'POST', body: { body } }),
   markThreadRead: (id) => apiFetchJson(`api/v1/threads/${id}/read/`, { method: 'POST' }),
+  threadBuyerChecklist: (id) => apiFetchJson(`api/v1/threads/${id}/buyer-checklist/`),
+  updateThreadBuyerChecklist: (id, patch) => apiFetchJson(`api/v1/threads/${id}/buyer-checklist/`, { method: 'PATCH', body: patch }),
+
+  createOffer: ({ listing_id, amount, currency } = {}) =>
+    apiFetchJson('api/v1/offers/', { method: 'POST', body: { listing_id, amount, currency } }),
+  acceptOffer: (offerId) => apiFetchJson(`api/v1/offers/${offerId}/accept/`, { method: 'POST', body: {} }),
+  rejectOffer: (offerId) => apiFetchJson(`api/v1/offers/${offerId}/reject/`, { method: 'POST', body: {} }),
+  counterOffer: (offerId, { amount, currency } = {}) =>
+    apiFetchJson(`api/v1/offers/${offerId}/counter/`, { method: 'POST', body: { amount, currency } }),
 
   blocks: () => apiFetchJson('api/v1/blocks/'),
   createBlock: (blocked_user_id) => apiFetchJson('api/v1/blocks/', { method: 'POST', body: { blocked_user_id } }),

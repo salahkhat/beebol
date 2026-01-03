@@ -30,6 +30,7 @@ from .views import (
     CoverUploadView,
     NotificationPreferenceMeView,
     NotificationViewSet,
+    OfferViewSet,
 )
 
 router = DefaultRouter()
@@ -40,6 +41,7 @@ router.register(r"neighborhoods", NeighborhoodViewSet, basename="neighborhood")
 router.register(r"listings", ListingViewSet, basename="listing")
 router.register(r"questions", PublicQuestionViewSet, basename="question")
 router.register(r"threads", PrivateThreadViewSet, basename="thread")
+router.register(r"offers", OfferViewSet, basename="offer")
 router.register(r"reports", ListingReportViewSet, basename="report")
 router.register(r"user-reports", UserReportViewSet, basename="user-report")
 router.register(r"blocks", UserBlockViewSet, basename="block")

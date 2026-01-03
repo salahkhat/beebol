@@ -15,3 +15,7 @@ Pillow>=10,<11
 
 django-storages
 google-cloud-storage
+
+# Background jobs (Phase 6)
+celery>=5.4,<6
+redis>=5,<6
